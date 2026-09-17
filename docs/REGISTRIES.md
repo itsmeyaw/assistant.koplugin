@@ -17,6 +17,7 @@ Two registries own everything configured from the UI. Both store JSON in `LuaSet
 - `Registry.installProvider(assistant, …)` — add + save + update in-memory config + load into the querier. `Registry.updateProvider` validates a candidate before mutating, so a rejected edit leaves the stored record untouched.
 - `Registry.delete(data, id)` / `Registry.is_deletable(provider)` — only `source=="ui"` providers are editable/deletable.
 - Gemini `base_url` must keep the `/models` segment (`FetchModels` GETs base_url; `query` POSTs `{base_url}/{model}:generateContent`). OpenAI-compatible Gemini endpoints use the `openai` handler.
+- Bedrock is the fifth selectable handler. It uses the native Converse/ConverseStream wire format, decodes binary EventStream responses, and browses foundation models plus inference profiles. Use a Bedrock API key with Bearer authentication, not IAM access keys or SigV4; set the regional runtime endpoint in `base_url`.
 - `Registry.showParametersDialog` is the reference hand-built dialog (no input field) — see `docs/UI_DIALOGS.md`.
 
 ## Search Registry (`assistant_search_registry.lua`, `SearchRegistry`)

@@ -11,7 +11,7 @@ KOReader plugin adding AI assistant features: 10+ providers, OpenAI Responses AP
 - `main.lua` — plugin init, TouchMenu registration, dispatcher actions/gestures, translate-override + auto-recap hooks, dictionary-popup button. `Assistant:_showAddProviderDialog` / `_showAddWebSearchDialog` delegate to the registries.
 - `_meta.lua` — version (`X.Y-dev`), manually bumped on `main` after a release tag; CI rewrites it from the tag during packaging.
 - `assistant_querier.lua` (`Querier`) — loads handlers, drives stream/non-stream paths, runs the web-search tool loop (max 3 rounds feeding results back), and parses SSE into one unified format.
-- `assistant_tool_executor.lua` (`ToolExecutor`) — normalizes tool-calling across the `openai`/`anthropic`/`gemini` wire formats; loads enabled search tools from `SearchRegistry` at query time.
+- `assistant_tool_executor.lua` (`ToolExecutor`) — normalizes tool-calling across the `openai`/`anthropic`/`gemini`/`bedrock` wire formats; loads enabled search tools from `SearchRegistry` at query time.
 - `assistant_exttools.lua` — search API clients (SerpAPI, Tavily, SearXNG, Exa).
 
 ## API handlers (`api_handlers/`)
@@ -22,17 +22,18 @@ KOReader plugin adding AI assistant features: 10+ providers, OpenAI Responses AP
 - `anthropic.lua` — `x-api-key` + `anthropic-version` headers, `/v1/messages`.
 - `gemini.lua` — API key as query param, `{base_url}/{model}:generateContent`.
 - `responses.lua` — OpenAI `/v1/responses` with built-in `web_search`/`file_search`/function tools.
+- `bedrock.lua` — the fifth wire format: Amazon Bedrock Converse/ConverseStream with native binary EventStream decoding, Bearer Bedrock API-key authentication (not IAM/SigV4), and foundation-model/inference-profile browsing.
 - Deltas: `groq.lua` (free-tier debounce), `gigachat.lua` (OAuth token), `gemma.lua` (picks OpenAI/Gemini parent by `base_url`; strips `<thought>`).
 
 ### Handler discovery
 
-`Querier` scans `api_handlers/` at runtime. File providers use config keys `{handler}_{description}` (the prefix before the first underscore selects the handler, e.g. `openai_perplexity` → `openai`). UI providers use stable IDs `custom:N` plus a `provider.handler` field naming the handler. `Registry.HANDLERS` allows only `openai`/`anthropic`/`gemini`/`responses` — thin wrappers and deltas are **not** UI-selectable.
+`Querier` scans `api_handlers/` at runtime. File providers use config keys `{handler}_{description}` (the prefix before the first underscore selects the handler, e.g. `openai_perplexity` → `openai`). UI providers use stable IDs `custom:N` plus a `provider.handler` field naming the handler. `Registry.HANDLERS` allows only `openai`/`anthropic`/`gemini`/`responses`/`bedrock` — thin wrappers and deltas are **not** UI-selectable.
 
 ### New providers & tool calling
 
 - OpenAI-compatible → alias `OpenAIHandler:new{name="..."}`.
 - Custom auth/shape → extend `BaseHandler` (`query`/`SyncOptions`/`FetchModels`) and route parsing through `self:parseToolCalls(...)`.
-- Route all tool-call logic through `ToolExecutor` — it already normalizes the three wire formats; do not duplicate per provider.
+- Route all tool-call logic through `ToolExecutor` — it already normalizes the four tool-calling wire formats; do not duplicate per provider.
 
 ## Registries
 

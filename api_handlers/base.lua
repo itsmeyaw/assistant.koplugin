@@ -623,7 +623,7 @@ end
 ---        returns  nil, error_string
 ---
 --- @param responseData  table   decoded JSON from the LLM (non-stream response)
---- @param format        string  "openai" | "anthropic" | "gemini"
+--- @param format        string  "openai" | "anthropic" | "gemini" | "bedrock"
 --- @return string|table result, string|nil error
 function BaseHandler:parseToolCalls(responseData, format)
     local tool_calls, raw_assistant, direct_content, parse_err =

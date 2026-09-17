@@ -78,6 +78,19 @@ local function buildToolResultMessages(tool_call_result)
         ASUtils.set_attr(msgs[#msgs], "search_keywords", keywords:get())
         table.insert(msgs, { role  = "user", parts = parts, })
 
+    elseif format == "bedrock" then
+        table.insert(msgs, raw_assistant)
+        local pos = #msgs
+        local content = {}
+        for _, result in ipairs(results) do
+            table.insert(content, { toolResult = {
+                toolUseId = result.tool_call_id,
+                content = { { text = result.search_result } },
+            } })
+            keywords:putf("⌗ %s\n\n", result.search_keywords)
+        end
+        ASUtils.set_attr(msgs[pos], "search_keywords", keywords:get())
+        table.insert(msgs, { role = "user", content = content })
     else  -- "openai"
         table.insert(msgs, raw_assistant)
         local pos = #msgs
@@ -175,7 +188,7 @@ end
 --- This factory method ensures all providers format tool calls consistently.
 ---
 --- @param tool_calls    table  The search tool_call_array
---- @param format        string  "openai" | "anthropic" | "gemini"
+--- @param format        string  "openai" | "anthropic" | "gemini" | "bedrock"
 --- @param contents      table|nil   table contains "content", "reasoning_content"
 --- @return boolean ok, table|string raw_assistant structure ready for buildToolResultMessages
 function ToolExecutor.buildRawAssistantForToolCall(tool_calls, format, contents)
@@ -191,7 +204,7 @@ function ToolExecutor.buildRawAssistantForToolCall(tool_calls, format, contents)
             end
             table.insert(ret, tc)
         end
-        for _, tc in ipairs(tool_calls) do
+        for tool_index, tc in ipairs(tool_calls) do
             local id, kw, err = ToolExecutor.extractKeywords(tc)
             if err then
                 return false, err
@@ -220,6 +233,32 @@ function ToolExecutor.buildRawAssistantForToolCall(tool_calls, format, contents)
             end
         end
         return true, { role  = "model", parts = parts, }
+    elseif format == "bedrock" then
+        local content = {}
+        if contents and type(contents.reasoning_content) == "string" and #contents.reasoning_content > 0 then
+            local reasoning_text = { text = contents.reasoning_content }
+            if type(contents.signature) == "string" then reasoning_text.signature = contents.signature end
+            table.insert(content, { reasoningContent = { reasoningText = reasoning_text } })
+        end
+        if contents and type(contents.reasoning_redacted_content) == "string" then
+            table.insert(content, { reasoningContent = { redactedContent = contents.reasoning_redacted_content } })
+        end
+        if contents and type(contents.content) == "string" and #contents.content > 0 then
+            table.insert(content, { text = contents.content })
+        end
+        for tool_index, tc in ipairs(tool_calls) do
+            local input = tc.input
+            if type(input) ~= "table" then
+                local ok, decoded = pcall(json.decode, tc.arguments or "{}")
+                input = ok and decoded or {}
+            end
+            table.insert(content, { toolUse = {
+                toolUseId = tc.tool_call_id or tc.id,
+                name = tc.name or "assistant_web_search",
+                input = input,
+            } })
+        end
+        return true, { role = "assistant", content = content }
     else  -- "openai" (and compatible: groq, openrouter, deepseek, mistral, etc.)
         local raw_tool_calls = {}
         for _, tc in ipairs(tool_calls) do
@@ -277,33 +316,46 @@ end
 --- @param tool_call       table   single tool call object
 --- @return string|nil id, string|nil keywords, string|nil error
 function ToolExecutor.extractKeywords(tool_call)
-    local keywords = nil
-    local id = nil
+    if type(tool_call) ~= "table" then
+        return nil, nil, _("Tool call did not include id.")
+    end
 
-    if tool_call.args then
+    local keywords, id
+    local args = koutil.tableGetValue(tool_call, "args")
+    local input = koutil.tableGetValue(tool_call, "input")
+    local arguments = koutil.tableGetValue(tool_call, "arguments")
+
+    if args ~= nil then
         -- Gemini: args is already a table
-        id = tool_call.tool_call_id or tool_call.id
-        keywords = tool_call.args.keywords
-        if type(keywords) == "table" and #keywords > 0 then
-            keywords = keywords[1] -- needs to be a string
+        id = koutil.tableGetValue(tool_call, "tool_call_id") or koutil.tableGetValue(tool_call, "id")
+        if type(args) == "table" then
+            keywords = koutil.tableGetValue(args, "keywords")
         end
-    elseif tool_call.arguments then
+    elseif arguments ~= nil then
         -- OpenAI: arguments is a JSON string
-        local ok_j, args = pcall(json.decode, tool_call.arguments)
-        if ok_j and type(args) == "table" then
-            keywords = json_default(args.keywords) or json_default(args.query)
+        if type(arguments) == "string" then
+            local ok_j, decoded = pcall(json.decode, arguments)
+            if ok_j and type(decoded) == "table" then
+                keywords = json_default(koutil.tableGetValue(decoded, "keywords"))
+                    or json_default(koutil.tableGetValue(decoded, "query"))
+            end
         end
-        id = tool_call.tool_call_id or tool_call.id
-    elseif tool_call.input then
-        -- Anthropic
-        id = tool_call.id
-        keywords = tool_call.input.keywords
+        id = koutil.tableGetValue(tool_call, "tool_call_id") or koutil.tableGetValue(tool_call, "id")
+    elseif input ~= nil then
+        -- Anthropic / Bedrock
+        id = koutil.tableGetValue(tool_call, "tool_call_id") or koutil.tableGetValue(tool_call, "id")
+        if type(input) == "table" then
+            keywords = koutil.tableGetValue(input, "keywords")
+        end
     end
 
     if not id then
         return nil, nil, _("Tool call did not include id.")
     end
-    if not keywords or #keywords == 0 then
+    if type(keywords) == "table" and #keywords > 0 then
+        keywords = keywords[1]
+    end
+    if type(keywords) ~= "string" or #keywords == 0 then
         return nil, nil, _("Tool call did not include search keywords.")
     end
 
@@ -313,7 +365,7 @@ end
 --- Get the handler format based on handler name.
 ---
 --- @param handler_name string  name of the handler (anthropic, gemini, openai, etc.)
---- @return string format  "anthropic" | "gemini" | "openai"
+--- @return string format  "anthropic" | "gemini" | "openai" | "bedrock"
 function ToolExecutor.getHandlerFormat(handler_name)
     if handler_name == "anthropic" then
         return "anthropic"
@@ -322,6 +374,8 @@ function ToolExecutor.getHandlerFormat(handler_name)
     elseif handler_name == "responses" then
         -- Responses API uses OpenAI-format messages internally for tool-call loop
         return "openai"
+    elseif handler_name == "bedrock" then
+        return "bedrock"
     else
         -- openai / groq / openrouter / deepseek / mistral / etc.
         return "openai"
@@ -451,6 +505,33 @@ function ToolExecutor.parseToolCallsResponse(responseData, format)
         }
         return tool_calls, raw_assistant, nil, nil
 
+    elseif format == "bedrock" then
+        local content = koutil.tableGetValue(responseData, "output", "message", "content")
+        if type(content) ~= "table" then
+            return nil, nil, nil, koutil.tableGetValue(responseData, "message")
+                or koutil.tableGetValue(responseData, "error", "message")
+                or "Bedrock: missing output message content"
+        end
+        local tool_calls, text_parts = {}, {}
+        for _, block in ipairs(content) do
+            local tool_use = koutil.tableGetValue(block, "toolUse")
+            if type(tool_use) == "table" then
+                local input = koutil.tableGetValue(tool_use, "input")
+                if type(input) ~= "table" then input = {} end
+                table.insert(tool_calls, {
+                    tool_call_id = koutil.tableGetValue(tool_use, "toolUseId"),
+                    name = koutil.tableGetValue(tool_use, "name"),
+                    input = input,
+                    arguments = json.encode(input),
+                })
+            end
+            local text = koutil.tableGetValue(block, "text")
+            if type(text) == "string" then table.insert(text_parts, text) end
+        end
+        if #tool_calls == 0 then
+            return nil, nil, #text_parts > 0 and table.concat(text_parts) or nil, nil
+        end
+        return tool_calls, { role = "assistant", content = content }, nil, nil
     else  -- "openai" (default — shared by groq / openrouter / deepseek / mistral / etc.)
         local assistant_message = koutil.tableGetValue(responseData, "choices", 1, "message")
         if not assistant_message then
@@ -489,8 +570,9 @@ end
 --- format = "openai"     → OpenAI function calling shape
 --- format = "anthropic"  → Anthropic tool shape
 --- format = "gemini"     → Gemini function_declarations shape
+--- format = "bedrock"    → Bedrock toolSpec shape
 ---
---- @param format string  "openai" | "anthropic" | "gemini"
+--- @param format string  "openai" | "anthropic" | "gemini" | "bedrock"
 --- @return table tool definition
 function ToolExecutor.buildExternalSearchToolDef(format)
     local param_schema = {
@@ -529,6 +611,14 @@ Return exactly one concise search query string.]]
             name        = "assistant_web_search",
             description = description,
             parameters  = param_schema,
+        }
+    elseif format == "bedrock" then
+        return {
+            toolSpec = {
+                name = "assistant_web_search",
+                description = description,
+                inputSchema = { json = param_schema },
+            },
         }
     else  -- "openai"
         return {
