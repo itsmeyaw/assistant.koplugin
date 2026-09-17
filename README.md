@@ -10,7 +10,7 @@ Interact with AI language models while reading. Ask questions, get translations,
 
 ## Features
 
-- **Multiple AI Providers**: Natively speaks the four mainstream protocols — OpenAI Chat Completions, OpenAI Responses, Anthropic Messages, and Google Gemini — so popular platforms such as DeepSeek, OpenRouter, Ollama, Groq, and Mistral work out of the box.
+- **Multiple AI Providers**: Natively speaks OpenAI Chat Completions, OpenAI Responses, Anthropic Messages, Google Gemini, and Amazon Bedrock Converse. DeepSeek, OpenRouter, Ollama, Groq, and Mistral work through OpenAI compatibility.
 - **Stream Mode**: Real-time responses from the API. Get the full LLM experience on e-ink devices.
 - **Web Search**: Let LLMs search the web for real and up-to-date information. Supports SerpAPI, Tavily, Exa, and SearXNG, with a per-question toggle.
 - **UI-Based Setup**: Add providers and models entirely from the UI, with built-in model browsing and connection testing.
@@ -73,6 +73,8 @@ Typing a long API key on an e-ink keyboard is painful. The easy path:
    - **Model** — type it manually, or tap **Browse Models** to fetch the list online and pick one
 3. Tap **Test** to check the connection, then **OK** to save. The new provider becomes active right away.
 4. To add another provider, go to `⚙ → AI Assistant → Settings → Provider API`. To switch providers or models, tap the provider entry (`Provider ▸ ...`) in `⚙ → AI Assistant` to open the **Providers and Models** dialog and select one. Only providers added from the UI can be edited or deleted.
+
+For Amazon Bedrock, use a Bedrock API key and the regional Bedrock Runtime URL (for example, `https://bedrock-runtime.us-east-1.amazonaws.com`).
 
 **Web search keys (SerpAPI / Tavily / Exa / SearXNG):** available both via UI configuration (`Settings → WebSearch API`) and via the configuration file. In the Ask dialog, use the `🌐 Web Search` checkbox to enable it per question.
 

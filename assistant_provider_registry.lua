@@ -47,6 +47,7 @@ Registry.HANDLERS = {
     anthropic = true,
     gemini    = true,
     responses = true,
+    bedrock   = true,
 }
 
 -- Default base URLs for each handler (used as pre-fill hint in UI).
@@ -58,6 +59,7 @@ Registry.DEFAULT_BASE_URLS = {
     responses = "https://api.openai.com/v1",
     anthropic = "https://api.anthropic.com/v1",
     gemini    = "https://generativelanguage.googleapis.com/v1beta/models",
+    bedrock   = "https://bedrock-runtime.us-east-1.amazonaws.com",
 }
 
 -- Per-handler guidance shown as the Base URL field description in the
@@ -67,6 +69,7 @@ local BASE_URL_DESCRIPTIONS = {
     responses = _("OpenAI Responses API"),
     gemini    = _("Gemini API"),
     anthropic = _("Anthropic Messages API"),
+    bedrock   = _("Amazon Bedrock Converse API"),
 }
 
 --- Connection-test failure report for the provider dialog: bold verdict, then
@@ -166,6 +169,7 @@ local PRESET_PROVIDERS = {
           anthropic_version = "2023-06-01",
           max_tokens = 4096,
       } },
+    { name = "Amazon Bedrock", handler = "bedrock", base_url = "https://bedrock-runtime.us-east-1.amazonaws.com" },
     { name = "DeepSeek",   handler = "openai",   base_url = "https://api.deepseek.com/v1",
       additional_parameters = {
           temperature = 0.7,

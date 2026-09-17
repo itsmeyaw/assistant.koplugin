@@ -150,7 +150,7 @@ local tests = {
     test("PRESET_PROVIDERS exported with name/handler/base_url", function()
         local presets = Registry.PRESET_PROVIDERS
         assert.notNil(presets)
-        assert.equal(#presets, 6)
+        assert.equal(#presets, 7)
         for i, preset in ipairs(presets) do
             assert.notNil(preset.name)
             assert.notNil(preset.handler)
@@ -165,9 +165,15 @@ local tests = {
         end
     end),
 
+    test("Bedrock is a supported handler with its regional runtime default URL", function()
+        assert.isTrue(Registry.HANDLERS.bedrock)
+        assert.equal(Registry.DEFAULT_BASE_URLS.bedrock,
+            "https://bedrock-runtime.us-east-1.amazonaws.com")
+    end),
+
     test("presets carry provider-specific additional_parameters defaults", function()
         local presets = Registry.PRESET_PROVIDERS
-        assert.equal(#presets, 6)
+        assert.equal(#presets, 7)
         for i, preset in ipairs(presets) do
             local want = EXPECTED_PRESET_PARAMS[preset.name]
             if want == nil then
@@ -238,6 +244,18 @@ local tests = {
         error("Responses preset missing from PRESET_PROVIDERS")
     end),
 
+    test("Amazon Bedrock preset uses the native handler and default URL", function()
+        for i, preset in ipairs(Registry.PRESET_PROVIDERS) do
+            if preset.name == "Amazon Bedrock" then
+                assert.equal(preset.handler, "bedrock")
+                assert.equal(preset.base_url, Registry.DEFAULT_BASE_URLS.bedrock)
+                assert.equal(preset.additional_parameters, nil)
+                return
+            end
+        end
+        error("Amazon Bedrock preset missing from PRESET_PROVIDERS")
+    end),
+
     -- =========================================================================
     -- showProviderDialog field descriptions
     -- =========================================================================
@@ -250,6 +268,7 @@ local tests = {
             { handler = "responses", pattern = "Responses API" },
             { handler = "gemini",    pattern = "Gemini API" },
             { handler = "anthropic", pattern = "Anthropic" },
+            { handler = "bedrock",   pattern = "Amazon Bedrock Converse API" },
         }
         local seen = {}
         for i, case in ipairs(cases) do

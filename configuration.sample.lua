@@ -9,8 +9,8 @@ local CONFIGURATION = {
     -- - The part BEFORE the first underscore determines which API handler is used
     -- - The part AFTER the underscore is just a descriptive name (can be anything)
     --
-    -- Only 4 handlers are supported for new configurations:
-    --   openai, anthropic, gemini, responses
+    -- Only 5 handlers are supported for new configurations:
+    --   openai, anthropic, gemini, responses, bedrock
     -- Any OpenAI-compatible endpoint (DeepSeek, OpenRouter, Grok, Perplexity,
     -- Ollama, Mistral, ...) uses the `openai` handler with its own base_url,
     -- e.g. `openai_deepseek`, `openai_openrouter`.
@@ -27,7 +27,7 @@ local CONFIGURATION = {
     -- Settings UI (Tools -> AI Assistant -> Settings -> Provider Settings -> Provider API).
     -- UI-added providers are saved to the plugin's settings file (not here) and
     -- merged with this configuration at startup. They support the same protocols:
-    -- openai, anthropic, gemini, responses.
+    -- openai, anthropic, gemini, responses, bedrock.
     --
     -- NOTE: no `additional_parameters` needed for basic usage. The handlers use
     -- sensible defaults; only add that field if you need to pass extra API
@@ -120,6 +120,16 @@ local CONFIGURATION = {
             model = "gpt-4o-mini", -- model list: https://platform.openai.com/docs/models
             base_url = "https://api.openai.com/v1",
             api_key = "your-openai-api-key",
+        },
+        -- Amazon Bedrock Converse API. Disabled by default; set visible = true
+        -- when ready. This native handler uses a Bedrock API key (Bearer), not
+        -- IAM access keys or SigV4. The AWS region is encoded in base_url.
+        bedrock_amazon = {
+            display_name = "Amazon Bedrock",
+            visible = false,
+            model = "us.anthropic.claude-sonnet-4-6",
+            base_url = "https://bedrock-runtime.us-east-1.amazonaws.com",
+            api_key = "your-bedrock-api-key",
         },
         serpapi = {
             -- External Search Tool API: SerpAPI, free tier: 250 searchs / month
