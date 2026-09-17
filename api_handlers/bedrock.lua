@@ -27,6 +27,12 @@ local function get_text(block)
     return type(text) == "string" and text or nil
 end
 
+local function encode_path_segment(value)
+    return value:gsub("([^%w%-._~])", function(char)
+        return string.format("%%%02X", char:byte())
+    end)
+end
+
 function BedrockHandler:SyncOptions(querier)
     BaseHandler.SyncOptions(self, querier)
     self.converse_url = self:getConverseUrl()
@@ -34,11 +40,11 @@ function BedrockHandler:SyncOptions(querier)
 end
 
 function BedrockHandler:getConverseUrl()
-    return self.base_url .. "/model/" .. self.model .. "/converse"
+    return self.base_url .. "/model/" .. encode_path_segment(self.model) .. "/converse"
 end
 
 function BedrockHandler:getConverseStreamUrl()
-    return self.base_url .. "/model/" .. self.model .. "/converse-stream"
+    return self.base_url .. "/model/" .. encode_path_segment(self.model) .. "/converse-stream"
 end
 
 function BedrockHandler:headers()

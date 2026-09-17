@@ -235,6 +235,14 @@ function ToolExecutor.buildRawAssistantForToolCall(tool_calls, format, contents)
         return true, { role  = "model", parts = parts, }
     elseif format == "bedrock" then
         local content = {}
+        if contents and type(contents.reasoning_content) == "string" and #contents.reasoning_content > 0 then
+            local reasoning_text = { text = contents.reasoning_content }
+            if type(contents.signature) == "string" then reasoning_text.signature = contents.signature end
+            table.insert(content, { reasoningContent = { reasoningText = reasoning_text } })
+        end
+        if contents and type(contents.reasoning_redacted_content) == "string" then
+            table.insert(content, { reasoningContent = { redactedContent = contents.reasoning_redacted_content } })
+        end
         if contents and type(contents.content) == "string" and #contents.content > 0 then
             table.insert(content, { text = contents.content })
         end

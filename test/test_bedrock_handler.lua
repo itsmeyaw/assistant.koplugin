@@ -44,6 +44,12 @@ local tests = {
         assert.equal("Bearer key", called.headers.Authorization)
         assert.equal(h.TEST_PROMPT, called.body.messages[1].content[1].text)
     end },
+    { name = "encodes inference profile ARNs in request paths", fn = function()
+        local h = handler()
+        h.model = "arn:aws:bedrock:us-east-1:123456789012:inference-profile/example"
+        assert.equal("https://bedrock-runtime.us-east-1.amazonaws.com/model/arn%3Aaws%3Abedrock%3Aus-east-1%3A123456789012%3Ainference-profile%2Fexample/converse",
+            h:getConverseUrl())
+    end },
     { name = "preserves native tool messages and ignores malformed history", fn = function()
         local body = handler():buildRequestBody({ false, { role = "assistant", content = {
             { toolUse = { toolUseId = "t", name = "assistant_web_search", input = {} } } } },
@@ -102,6 +108,22 @@ local tests = {
             arguments = '{"keywords":"q"}' } }, "bedrock", { content = "before search" })
         assert.isTrue(raw_ok)
         assert.equal("before search", raw.content[1].text)
+        assert.equal("x", raw.content[2].toolUse.toolUseId)
+    end },
+    { name = "replays signed reasoning before streamed tool calls", fn = function()
+        local q = setmetatable({}, { __index = Querier })
+        local result, reasoning = strbuf.new(), strbuf.new()
+        local acc = { current = {}, tools = {} }
+        q:processChunk({ eventType = { contentBlockDelta = { contentBlockIndex = 0,
+            delta = { reasoningContent = { text = "thinking", signature = "signed" } } } } }, nil,
+            result, reasoning, acc)
+        local ok, raw = ToolExecutor.buildRawAssistantForToolCall({ { tool_call_id = "x",
+            name = "assistant_web_search", arguments = '{"keywords":"q"}' } }, "bedrock", {
+                reasoning_content = reasoning:tostring(), signature = acc.signature,
+            })
+        assert.isTrue(ok)
+        assert.equal("thinking", raw.content[1].reasoningContent.reasoningText.text)
+        assert.equal("signed", raw.content[1].reasoningContent.reasoningText.signature)
         assert.equal("x", raw.content[2].toolUse.toolUseId)
     end },
     { name = "normalizes partial model responses", fn = function()

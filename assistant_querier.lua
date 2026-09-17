@@ -998,7 +998,8 @@ function Querier:processStream(bgQuery, trunk_callback)
     if tool_calls then
         local tc_content = {
             reasoning_key = tool_call_acc.reasoning_key, -- openai dialets
-            signature = tool_call_acc.signature,         -- anthropic signatures
+            signature = tool_call_acc.signature,         -- reasoning signatures
+            reasoning_redacted_content = tool_call_acc.reasoning_redacted_content,
         }
         if #reasoning_content_buffer > 0 then
             tc_content.reasoning_content = reasoning_content_buffer:get()
@@ -1087,7 +1088,12 @@ function Querier:processChunk(event, trunk_callback, result_buffer, reasoning_co
                 return
             end
             result_content = json_default(koutil.tableGetValue(delta_event, "delta", "text"), "")
-            reasoning_content = json_default(koutil.tableGetValue(delta_event, "delta", "reasoningContent", "text"), "")
+            local reasoning = koutil.tableGetValue(delta_event, "delta", "reasoningContent")
+            reasoning_content = json_default(koutil.tableGetValue(reasoning, "text"), "")
+            local signature = koutil.tableGetValue(reasoning, "signature")
+            if type(signature) == "string" then tool_call_acc.signature = signature end
+            local redacted = koutil.tableGetValue(reasoning, "redactedContent")
+            if type(redacted) == "string" then tool_call_acc.reasoning_redacted_content = redacted end
         elseif koutil.tableGetValue(bedrock_event, "contentBlockStop") then
             local index = koutil.tableGetValue(bedrock_event, "contentBlockStop", "contentBlockIndex")
             local current = tool_call_acc.by_index and tool_call_acc.by_index[index]
