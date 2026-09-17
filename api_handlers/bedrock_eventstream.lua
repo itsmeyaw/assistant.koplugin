@@ -3,7 +3,7 @@ local bit = require("bit")
 local EventStream = {}
 EventStream.__index = EventStream
 
-local MAX_MESSAGE_SIZE = 16 * 1024 * 1024
+local MAX_MESSAGE_SIZE = 24 * 1024 * 1024 + 128 * 1024 + 16
 local MIN_MESSAGE_SIZE = 16
 local UINT32 = 4294967296
 

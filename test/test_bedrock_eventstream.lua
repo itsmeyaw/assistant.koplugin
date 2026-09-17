@@ -134,6 +134,12 @@ local tests = {
         assert.equal(events, nil)
         assert.matches(err, "message length")
 
+        prelude = u32(24 * 1024 * 1024 + 128 * 1024 + 17) .. u32(0)
+        decoder = EventStream:new()
+        events, err = decoder:feed(prelude .. u32(crc32(prelude)))
+        assert.equal(events, nil)
+        assert.matches(err, "message length")
+
         prelude = u32(16) .. u32(1)
         decoder = EventStream:new()
         events, err = decoder:feed(prelude .. u32(crc32(prelude)))
