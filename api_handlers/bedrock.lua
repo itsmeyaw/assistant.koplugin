@@ -14,6 +14,14 @@ local strbuf = require("string.buffer")
 
 local BedrockHandler = BaseHandler:new({ name = "bedrock", can_fetch_models = true })
 
+local STREAM_ERROR_CODES = {
+    throttlingException = 429,
+    validationException = 400,
+    modelStreamErrorException = 424,
+    internalServerException = 500,
+    serviceUnavailableException = 503,
+}
+
 local function get_text(block)
     local text = koutil.tableGetValue(block, "text")
     return type(text) == "string" and text or nil
@@ -21,8 +29,16 @@ end
 
 function BedrockHandler:SyncOptions(querier)
     BaseHandler.SyncOptions(self, querier)
-    self.converse_url = self.base_url .. "/model/" .. self.model .. "/converse"
-    self.stream_url = self.base_url .. "/model/" .. self.model .. "/converse-stream"
+    self.converse_url = self:getConverseUrl()
+    self.stream_url = self:getConverseStreamUrl()
+end
+
+function BedrockHandler:getConverseUrl()
+    return self.base_url .. "/model/" .. self.model .. "/converse"
+end
+
+function BedrockHandler:getConverseStreamUrl()
+    return self.base_url .. "/model/" .. self.model .. "/converse-stream"
 end
 
 function BedrockHandler:headers()
@@ -32,7 +48,7 @@ end
 function BedrockHandler:convertMessages(messages)
     local system, converted = {}, {}
     if type(messages) ~= "table" then return converted, system end
-    for _, message in ipairs(messages) do
+    for message_index, message in ipairs(messages) do
         if type(message) == "table" then
             local role, content = message.role, message.content
             if role == "system" and type(content) == "string" then
@@ -70,11 +86,11 @@ end
 
 function BedrockHandler:Test()
     local body = { messages = { { role = "user", content = { { text = self.TEST_PROMPT } } } } }
-    return self:testRequest(self.converse_url, self:headers(), body, function(data)
+    return self:testRequest(self:getConverseUrl(), self:headers(), body, function(data)
         local content = koutil.tableGetValue(data, "output", "message", "content")
         if type(content) ~= "table" then return nil end
         local text = {}
-        for _, block in ipairs(content) do
+        for block_index, block in ipairs(content) do
             local value = get_text(block)
             if value then table.insert(text, value) end
         end
@@ -86,6 +102,16 @@ local function stream_error(fd, handler, code, status, raw_body, headers)
     ffiutil.writeToFD(fd, "\r\n" .. handler.PROTOCOL_NON_200 .. json.encode({
         code = code, status = status, raw_body = raw_body, resp_headers = headers,
     }) .. "\r\n")
+end
+
+function BedrockHandler.wrapStreamEvent(event_type, payload)
+    if type(event_type) ~= "string" or event_type == "" then
+        return nil, "Bedrock EventStream event is missing :event-type"
+    end
+    if type(payload) ~= "table" then
+        return nil, "Invalid Bedrock event payload"
+    end
+    return { eventType = { [event_type] = payload } }
 end
 
 function BedrockHandler:backgroundRequest(url, headers, body)
@@ -103,21 +129,34 @@ function BedrockHandler:backgroundRequest(url, headers, body)
             if failed then return true end
             local frames, err = decoder:feed(chunk)
             if not frames then fail("BEDROCK_EVENTSTREAM", "ProtocolError", err); return true end
-            for _, frame in ipairs(frames) do
+            for frame_index, frame in ipairs(frames) do
                 local message_type = koutil.tableGetValue(frame, "headers", ":message-type")
                 local event_type = koutil.tableGetValue(frame, "headers", ":event-type")
                 local error_type = koutil.tableGetValue(frame, "headers", ":exception-type")
                     or koutil.tableGetValue(frame, "headers", ":error-code")
+                local error_message = koutil.tableGetValue(frame, "headers", ":error-message")
+                local error_key = type(error_type) == "string" and error_type or nil
+                if message_type == "error" then
+                    local raw_error = json.encode({ code = error_key, message = error_message })
+                    fail(STREAM_ERROR_CODES[error_key] or error_key or "BedrockError", error_key or "BedrockError", raw_error)
+                    break
+                end
                 local ok, payload = pcall(json.decode, frame.payload)
                 if not ok or type(payload) ~= "table" then
                     fail("BEDROCK_EVENTSTREAM", "InvalidPayload", "Invalid Bedrock event payload")
                     break
                 end
-                if message_type == "exception" or message_type == "error" or error_type then
-                    fail(error_type or event_type or "BedrockException", error_type or event_type or "BedrockException", frame.payload)
+                if message_type == "exception" or error_type then
+                    local exception = error_key or event_type or "BedrockException"
+                    fail(STREAM_ERROR_CODES[exception] or exception, exception, frame.payload)
                     break
                 end
-                ffiutil.writeToFD(child_write_fd, "data: " .. json.encode({ eventType = payload }) .. "\n\n")
+                local event, wrap_err = self.wrapStreamEvent(event_type, payload)
+                if not event then
+                    fail("BEDROCK_EVENTSTREAM", "ProtocolError", wrap_err)
+                    break
+                end
+                ffiutil.writeToFD(child_write_fd, "data: " .. json.encode(event) .. "\n\n")
             end
             return true
         end
@@ -147,9 +186,9 @@ function BedrockHandler:query(message_history, query_option)
     end
     local body = self:buildRequestBody(message_history, query_option, tools)
     if query_option.use_stream_mode then
-        return self:backgroundRequest(self.stream_url, self:headers(), json.encode(body))
+        return self:backgroundRequest(self:getConverseStreamUrl(), self:headers(), json.encode(body))
     end
-    local success, code, response = self:makeRequest(self.converse_url, self:headers(), json.encode(body))
+    local success, code, response = self:makeRequest(self:getConverseUrl(), self:headers(), json.encode(body))
     if not success then
         local ok, decoded = type(response) == "string" and pcall(json.decode, response)
         local detail = ok and type(decoded) == "table" and ASUtils.extractErrorMessage(decoded) or nil
@@ -169,20 +208,22 @@ function BedrockHandler:FetchModels()
     local foundation, foundation_err = ASUtils.fetchJSON(control .. "/foundation-models?byOutputModality=TEXT", headers)
     local profiles, profiles_err = ASUtils.fetchJSON(control .. "/inference-profiles?maxResults=1000", headers)
     local entries = {}
-    local function add(items, id_key, name_key, status_path)
+    local function add(items, id_key, name_key, status_path, require_streaming)
         if type(items) ~= "table" then return end
-        for _, item in ipairs(items) do
+        for item_index, item in ipairs(items) do
             local id = koutil.tableGetValue(item, id_key)
             local status = koutil.tableGetValue(item, unpack(status_path))
-            if type(id) == "string" and (status == nil or status == "ACTIVE") then
+            local streaming = koutil.tableGetValue(item, "responseStreamingSupported")
+            if type(id) == "string" and (status == nil or status == "ACTIVE")
+                and (not require_streaming or streaming ~= false) then
                 entries[id] = { id = id, name = koutil.tableGetValue(item, name_key) or id }
             end
         end
     end
-    add(koutil.tableGetValue(foundation, "modelSummaries"), "modelId", "modelName", { "modelLifecycle", "status" })
+    add(koutil.tableGetValue(foundation, "modelSummaries"), "modelId", "modelName", { "modelLifecycle", "status" }, true)
     add(koutil.tableGetValue(profiles, "inferenceProfileSummaries"), "inferenceProfileId", "inferenceProfileName", { "status" })
     local result = {}
-    for _, entry in pairs(entries) do table.insert(result, entry) end
+    for id, entry in pairs(entries) do table.insert(result, entry) end
     table.sort(result, function(a, b) return a.id < b.id end)
     if #result > 0 then return result end
     return nil, foundation_err or profiles_err or "Failed to fetch Bedrock models"

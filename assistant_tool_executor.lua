@@ -204,7 +204,7 @@ function ToolExecutor.buildRawAssistantForToolCall(tool_calls, format, contents)
             end
             table.insert(ret, tc)
         end
-        for _, tc in ipairs(tool_calls) do
+        for tool_index, tc in ipairs(tool_calls) do
             local id, kw, err = ToolExecutor.extractKeywords(tc)
             if err then
                 return false, err
@@ -235,7 +235,10 @@ function ToolExecutor.buildRawAssistantForToolCall(tool_calls, format, contents)
         return true, { role  = "model", parts = parts, }
     elseif format == "bedrock" then
         local content = {}
-        for _, tc in ipairs(tool_calls) do
+        if contents and type(contents.content) == "string" and #contents.content > 0 then
+            table.insert(content, { text = contents.content })
+        end
+        for tool_index, tc in ipairs(tool_calls) do
             local input = tc.input
             if type(input) ~= "table" then
                 local ok, decoded = pcall(json.decode, tc.arguments or "{}")
@@ -325,7 +328,9 @@ function ToolExecutor.extractKeywords(tool_call)
     elseif tool_call.input then
         -- Anthropic
         id = tool_call.tool_call_id or tool_call.id
-        keywords = tool_call.input.keywords
+        if type(tool_call.input) == "table" then
+            keywords = tool_call.input.keywords
+        end
     end
 
     if not id then
@@ -492,7 +497,8 @@ function ToolExecutor.parseToolCallsResponse(responseData, format)
         for _, block in ipairs(content) do
             local tool_use = koutil.tableGetValue(block, "toolUse")
             if type(tool_use) == "table" then
-                local input = koutil.tableGetValue(tool_use, "input") or {}
+                local input = koutil.tableGetValue(tool_use, "input")
+                if type(input) ~= "table" then input = {} end
                 table.insert(tool_calls, {
                     tool_call_id = koutil.tableGetValue(tool_use, "toolUseId"),
                     name = koutil.tableGetValue(tool_use, "name"),

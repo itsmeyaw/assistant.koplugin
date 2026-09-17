@@ -33,6 +33,17 @@ local tests = {
         assert.equal(nil, body.ignored)
         assert.equal(1, body.additionalModelRequestFields.foo)
     end },
+    { name = "tests a fresh handler using its dynamic endpoint", fn = function()
+        local h, called = handler()
+        h.testRequest = function(self, url, headers, body)
+            called = { url = url, headers = headers, body = body }
+            return { content = "OK" }
+        end
+        h:Test()
+        assert.equal("https://bedrock-runtime.us-east-1.amazonaws.com/model/anthropic.claude-test/converse", called.url)
+        assert.equal("Bearer key", called.headers.Authorization)
+        assert.equal(h.TEST_PROMPT, called.body.messages[1].content[1].text)
+    end },
     { name = "preserves native tool messages and ignores malformed history", fn = function()
         local body = handler():buildRequestBody({ false, { role = "assistant", content = {
             { toolUse = { toolUseId = "t", name = "assistant_web_search", input = {} } } } },
@@ -50,6 +61,14 @@ local tests = {
         assert.isTrue(calls.__is_tool_call)
         assert.equal(2, #calls.tool_calls)
     end },
+    { name = "handles malformed tool inputs without crashing", fn = function()
+        local calls = handler():parseToolCalls({ output = { message = { content = { { toolUse = {
+            toolUseId = "bad", name = "assistant_web_search", input = "not-json" } } } } } }, "bedrock")
+        local id, keywords, err = ToolExecutor.extractKeywords(calls.tool_calls[1])
+        assert.equal(nil, id)
+        assert.equal(nil, keywords)
+        assert.matches(err, "search keywords")
+    end },
     { name = "builds Bedrock tools and result messages", fn = function()
         local tool = ToolExecutor.buildExternalSearchToolDef("bedrock")
         assert.equal("assistant_web_search", tool.toolSpec.name)
@@ -59,6 +78,11 @@ local tests = {
             role = "assistant", content = {} }, search_results = { { tool_call_id = "x", search_result = "found", search_keywords = "q" } } })
         assert.isTrue(ok)
         assert.equal("found", history[2].content[1].toolResult.content[1].text)
+        local raw_ok, raw = ToolExecutor.buildRawAssistantForToolCall({ { tool_call_id = "x", name = "assistant_web_search",
+            arguments = '{"keywords":"q"}' } }, "bedrock", { content = "before search" })
+        assert.isTrue(raw_ok)
+        assert.equal("before search", raw.content[1].text)
+        assert.equal("x", raw.content[2].toolUse.toolUseId)
     end },
     { name = "normalizes partial model responses", fn = function()
         helper.mockFetchJSON({ { parsed = { modelSummaries = { { modelId = "a", modelName = "A", modelLifecycle = { status = "ACTIVE" } },
@@ -66,6 +90,14 @@ local tests = {
         local models = handler():FetchModels()
         assert.equal(1, #models)
         assert.equal("a", models[1].id)
+    end },
+    { name = "omits non-streaming foundation models", fn = function()
+        helper.mockFetchJSON({ { parsed = { modelSummaries = { { modelId = "no-stream", modelLifecycle = { status = "ACTIVE" },
+            responseStreamingSupported = false }, { modelId = "stream", modelLifecycle = { status = "ACTIVE" }, responseStreamingSupported = true } } } },
+            { parsed = { inferenceProfileSummaries = {} } } })
+        local models = handler():FetchModels()
+        assert.equal(1, #models)
+        assert.equal("stream", models[1].id)
     end },
     { name = "deduplicates and sorts model ids", fn = function()
         helper.mockFetchJSON({ { parsed = { modelSummaries = { { modelId = "z", modelLifecycle = { status = "ACTIVE" } },
@@ -87,6 +119,31 @@ local tests = {
         assert.equal("TOOLCALLS", signal)
         assert.equal("x", acc.tools[1].id)
         assert.equal('{"keywords":"q"}', acc.tools[1].arguments_parts:tostring())
+    end },
+    { name = "wraps unwrapped stream payloads for text processing", fn = function()
+        local wrapped = Bedrock.wrapStreamEvent("contentBlockDelta", { contentBlockIndex = 0, delta = { text = "hello" } })
+        local q = setmetatable({}, { __index = Querier })
+        local result, reasoning = strbuf.new(), strbuf.new()
+        q:processChunk(wrapped, nil, result, reasoning, { current = {}, tools = {} })
+        assert.equal("hello", result:tostring())
+        local missing, err = Bedrock.wrapStreamEvent(nil, {})
+        assert.equal(nil, missing)
+        assert.matches(err, "event%-type")
+    end },
+    { name = "uses Converse request path and structured AWS errors", fn = function()
+        local h, request = handler()
+        h.makeRequest = function(self, url, headers, body)
+            request = { url = url, headers = headers, body = json.decode(body) }
+            return true, 200, json.encode({ output = { message = { content = { { text = "answer" } } } } })
+        end
+        assert.equal("answer", h:query({ { role = "user", content = "question" } }, { use_stream_mode = false, use_websearch = "none" }))
+        assert.equal(h:getConverseUrl(), request.url)
+        assert.equal("Bearer key", request.headers.Authorization)
+        assert.equal("question", request.body.messages[1].content[1].text)
+        h.makeRequest = function() return false, 400, '{"message":"AWS says no"}' end
+        local answer, err = h:query({}, { use_stream_mode = false, use_websearch = "none" })
+        assert.equal(nil, answer)
+        assert.equal("AWS says no", err)
     end },
 }
 
