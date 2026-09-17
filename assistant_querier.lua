@@ -1059,9 +1059,51 @@ function Querier:processChunk(event, trunk_callback, result_buffer, reasoning_co
     local choices    = event.choices
     local candidates = event.candidates
     local anthropic_type = event.type
+    local bedrock_event = event.eventType
 
-    -- 1. OpenAI-compatible handles (openai / groq / openrouter / deepseek / mistral …)
-    if choices then
+    -- 1. Bedrock ConverseStream event wrapped by its handler.
+    if type(bedrock_event) == "table" then
+        local start = koutil.tableGetValue(bedrock_event, "contentBlockStart")
+        local delta_event = koutil.tableGetValue(bedrock_event, "contentBlockDelta")
+        if type(start) == "table" then
+            local tool_use = koutil.tableGetValue(start, "start", "toolUse")
+            if type(tool_use) == "table" then
+                tool_call_acc.by_index = tool_call_acc.by_index or {}
+                local index = koutil.tableGetValue(start, "contentBlockIndex")
+                tool_call_acc.by_index[index] = {
+                    id = koutil.tableGetValue(tool_use, "toolUseId"),
+                    name = koutil.tableGetValue(tool_use, "name"),
+                    index = index,
+                    arguments_parts = strbuf.new(),
+                }
+            end
+            return
+        elseif type(delta_event) == "table" then
+            local index = koutil.tableGetValue(delta_event, "contentBlockIndex")
+            local current = tool_call_acc.by_index and tool_call_acc.by_index[index]
+            local input = koutil.tableGetValue(delta_event, "delta", "toolUse", "input")
+            if current and type(input) == "string" then
+                current.arguments_parts:put(input)
+                return
+            end
+            result_content = json_default(koutil.tableGetValue(delta_event, "delta", "text"), "")
+            reasoning_content = json_default(koutil.tableGetValue(delta_event, "delta", "reasoningContent", "text"), "")
+        elseif koutil.tableGetValue(bedrock_event, "contentBlockStop") then
+            local index = koutil.tableGetValue(bedrock_event, "contentBlockStop", "contentBlockIndex")
+            local current = tool_call_acc.by_index and tool_call_acc.by_index[index]
+            if current then
+                table.insert(tool_call_acc.tools, current)
+                tool_call_acc.by_index[index] = nil
+            end
+            return
+        elseif koutil.tableGetValue(bedrock_event, "messageStop", "stopReason") then
+            stop_reason = koutil.tableGetValue(bedrock_event, "messageStop", "stopReason")
+        else
+            return -- messageStart and metadata
+        end
+
+    -- 2. OpenAI-compatible handles (openai / groq / openrouter / deepseek / mistral …)
+    elseif choices then
         for _, choice in ipairs(choices) do
             stop_reason = json_default(choice.finish_reason)
             local cdelta = choice.delta
@@ -1128,7 +1170,7 @@ function Querier:processChunk(event, trunk_callback, result_buffer, reasoning_co
             end
         end
 
-    -- 2. Gemini handles
+    -- 3. Gemini handles
     elseif candidates then
         stop_reason = json_default(candidates[1].finishReason)
         local parts = koutil.tableGetValue(candidates, 1, "content", "parts") or {}
@@ -1161,7 +1203,7 @@ function Querier:processChunk(event, trunk_callback, result_buffer, reasoning_co
             end
         end
 
-    -- 3. Anthropic handles
+    -- 4. Anthropic handles
     elseif anthropic_type then
         if anthropic_type == "content_block_start" then
             local cb = json_default(event.content_block)
