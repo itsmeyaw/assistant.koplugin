@@ -98,9 +98,9 @@ function BedrockHandler:Test()
     end)
 end
 
-local function stream_error(fd, handler, code, status, raw_body, headers)
+local function stream_error(fd, handler, code, status, raw_body, headers, url)
     ffiutil.writeToFD(fd, "\r\n" .. handler.PROTOCOL_NON_200 .. json.encode({
-        code = code, status = status, raw_body = raw_body, resp_headers = headers,
+        code = code, status = status, raw_body = raw_body, resp_headers = headers, url = url,
     }) .. "\r\n")
 end
 
@@ -119,16 +119,19 @@ function BedrockHandler:backgroundRequest(url, headers, body)
         if not pid or not child_write_fd then return end
         if url:sub(1, 5) == "https" then https.cert_verify = false end
         local decoder, raw = EventStream.new(), strbuf.new()
+        local MAX_ERR_BODY = 64 * 1024
         local failed
         local function fail(code, status, detail)
             if not failed then failed = { code = code, status = status, detail = detail } end
         end
         local function sink(chunk)
             if not chunk then return true end
-            raw:put(chunk)
-            if failed then return true end
+            if #raw < MAX_ERR_BODY then
+                raw:put(chunk:sub(1, MAX_ERR_BODY - #raw))
+            end
             local frames, err = decoder:feed(chunk)
-            if not frames then fail("BEDROCK_EVENTSTREAM", "ProtocolError", err); return true end
+            if not frames and not failed then fail("BEDROCK_EVENTSTREAM", "ProtocolError", err) end
+            if failed then return true end
             for frame_index, frame in ipairs(frames) do
                 local message_type = koutil.tableGetValue(frame, "headers", ":message-type")
                 local event_type = koutil.tableGetValue(frame, "headers", ":event-type")
@@ -164,13 +167,13 @@ function BedrockHandler:backgroundRequest(url, headers, body)
             url = url, method = "POST", headers = headers, source = ltn12.source.string(body), sink = sink,
         }))
         if code ~= 200 then
-            stream_error(child_write_fd, self, code, status, raw:tostring(), resp_headers)
+            stream_error(child_write_fd, self, code, status, raw:tostring(), resp_headers, url)
         elseif failed then
-            stream_error(child_write_fd, self, failed.code, failed.status, failed.detail, resp_headers)
+            stream_error(child_write_fd, self, failed.code, failed.status, failed.detail, resp_headers, url)
         else
             local ok, err = decoder:finish()
             if not ok then
-                stream_error(child_write_fd, self, "BEDROCK_EVENTSTREAM", "ProtocolError", err, resp_headers)
+                stream_error(child_write_fd, self, "BEDROCK_EVENTSTREAM", "ProtocolError", err, resp_headers, url)
             else
                 ffiutil.writeToFD(child_write_fd, "data: [DONE]\n\n")
             end

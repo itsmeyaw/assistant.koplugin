@@ -308,35 +308,46 @@ end
 --- @param tool_call       table   single tool call object
 --- @return string|nil id, string|nil keywords, string|nil error
 function ToolExecutor.extractKeywords(tool_call)
-    local keywords = nil
-    local id = nil
+    if type(tool_call) ~= "table" then
+        return nil, nil, _("Tool call did not include id.")
+    end
 
-    if tool_call.args then
+    local keywords, id
+    local args = koutil.tableGetValue(tool_call, "args")
+    local input = koutil.tableGetValue(tool_call, "input")
+    local arguments = koutil.tableGetValue(tool_call, "arguments")
+
+    if args ~= nil then
         -- Gemini: args is already a table
-        id = tool_call.tool_call_id or tool_call.id
-        keywords = tool_call.args.keywords
-        if type(keywords) == "table" and #keywords > 0 then
-            keywords = keywords[1] -- needs to be a string
+        id = koutil.tableGetValue(tool_call, "tool_call_id") or koutil.tableGetValue(tool_call, "id")
+        if type(args) == "table" then
+            keywords = koutil.tableGetValue(args, "keywords")
         end
-    elseif tool_call.arguments then
+    elseif arguments ~= nil then
         -- OpenAI: arguments is a JSON string
-        local ok_j, args = pcall(json.decode, tool_call.arguments)
-        if ok_j and type(args) == "table" then
-            keywords = json_default(args.keywords) or json_default(args.query)
+        if type(arguments) == "string" then
+            local ok_j, decoded = pcall(json.decode, arguments)
+            if ok_j and type(decoded) == "table" then
+                keywords = json_default(koutil.tableGetValue(decoded, "keywords"))
+                    or json_default(koutil.tableGetValue(decoded, "query"))
+            end
         end
-        id = tool_call.tool_call_id or tool_call.id
-    elseif tool_call.input then
-        -- Anthropic
-        id = tool_call.tool_call_id or tool_call.id
-        if type(tool_call.input) == "table" then
-            keywords = tool_call.input.keywords
+        id = koutil.tableGetValue(tool_call, "tool_call_id") or koutil.tableGetValue(tool_call, "id")
+    elseif input ~= nil then
+        -- Anthropic / Bedrock
+        id = koutil.tableGetValue(tool_call, "tool_call_id") or koutil.tableGetValue(tool_call, "id")
+        if type(input) == "table" then
+            keywords = koutil.tableGetValue(input, "keywords")
         end
     end
 
     if not id then
         return nil, nil, _("Tool call did not include id.")
     end
-    if not keywords or #keywords == 0 then
+    if type(keywords) == "table" and #keywords > 0 then
+        keywords = keywords[1]
+    end
+    if type(keywords) ~= "string" or #keywords == 0 then
         return nil, nil, _("Tool call did not include search keywords.")
     end
 
