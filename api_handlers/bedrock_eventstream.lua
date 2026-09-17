@@ -45,6 +45,26 @@ local function read_u32(data, index)
     return ((first * 256 + second) * 256 + third) * 256 + fourth
 end
 
+local function read_signed(data, index, bytes)
+    if bytes == 8 then
+        local high = read_u32(data, index)
+        local low = read_u32(data, index + 4)
+        if high >= UINT32 / 2 then
+            return (high - UINT32) * UINT32 + low
+        end
+        return high * UINT32 + low
+    end
+    local value = 0
+    for offset = 0, bytes - 1 do
+        value = value * 256 + data:byte(index + offset)
+    end
+    local sign = 256 ^ bytes / 2
+    if value >= sign then
+        return value - sign * 2
+    end
+    return value
+end
+
 local function parse_headers(data, first, last)
     local headers = {}
     local index = first
@@ -68,7 +88,12 @@ local function parse_headers(data, first, last)
         index = index + 1
 
         local value_length = 0
-        if value_type == 2 then
+        local value
+        if value_type == 0 then
+            value = true
+        elseif value_type == 1 then
+            value = false
+        elseif value_type == 2 then
             value_length = 1
         elseif value_type == 3 then
             value_length = 2
@@ -84,16 +109,19 @@ local function parse_headers(data, first, last)
             index = index + 2
         elseif value_type == 9 then
             value_length = 16
-        elseif value_type ~= 0 and value_type ~= 1 then
+        else
             return nil, "invalid Amazon EventStream header type"
         end
 
         if index + value_length > last + 1 then
             return nil, "truncated Amazon EventStream header value"
         end
-        if value_type == 7 then
-            headers[name] = data:sub(index, index + value_length - 1)
+        if value_type == 2 or value_type == 3 or value_type == 4 or value_type == 5 or value_type == 8 then
+            value = read_signed(data, index, value_length)
+        elseif value_type == 6 or value_type == 7 or value_type == 9 then
+            value = data:sub(index, index + value_length - 1)
         end
+        headers[name] = value
         index = index + value_length
     end
 

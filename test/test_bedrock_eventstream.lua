@@ -3,6 +3,7 @@ local assert = helper.assert
 local bit = require("bit")
 local EventStream = require("api_handlers/bedrock_eventstream")
 
+local KNOWN_FRAME = "\000\000\000)\000\000\000\020\179)Fa\011:event-type\007\000\005chunkhello\179\207\239\128"
 local UINT32 = 4294967296
 local CRC32_TABLE = {}
 for byte = 0, 255 do
@@ -54,6 +55,14 @@ local function test(name, fn)
 end
 
 local tests = {
+    test("decodes an externally generated CRC frame", function()
+        local decoder = EventStream.new()
+        local events = decoder:feed(KNOWN_FRAME)
+        assert.equal(#events, 1)
+        assert.equal(events[1].headers[":event-type"], "chunk")
+        assert.equal(events[1].payload, "hello")
+    end),
+
     test("decodes one event with string headers and raw payload", function()
         local decoder = EventStream:new()
         local events = decoder:feed(frame(header(":event-type", 7, u16(5) .. "chunk"), "hello"))
@@ -71,11 +80,11 @@ local tests = {
         assert.equal(events[2].payload, "two")
     end),
 
-    test("preserves frames across every byte boundary and skips non-string headers", function()
-        local headers = header("true", 0) .. header("false", 1) .. header("byte", 2, "\001") .. header("short", 3, "\000\001")
-            .. header("int", 4, "\000\000\000\001") .. header("long", 5, string.rep("\000", 8))
-            .. header("bytes", 6, u16(2) .. "ok") .. header("time", 8, string.rep("\000", 8))
-            .. header("uuid", 9, string.rep("\000", 16)) .. header("text", 7, u16(4) .. "done")
+    test("preserves frames across every byte boundary and retains all header types", function()
+        local headers = header("true", 0) .. header("false", 1) .. header("byte", 2, "\255") .. header("short", 3, "\255\254")
+            .. header("int", 4, "\255\255\255\254") .. header("long", 5, string.rep("\255", 7) .. "\253")
+            .. header("bytes", 6, u16(2) .. "ok") .. header("time", 8, string.rep("\255", 7) .. "\252")
+            .. header("uuid", 9, "1234567890abcdef") .. header("text", 7, u16(4) .. "done")
         local encoded = frame(headers, "payload")
         local decoder = EventStream:new()
         local events = {}
@@ -86,8 +95,16 @@ local tests = {
             end
         end
         assert.equal(#events, 1)
+        assert.equal(events[1].headers["true"], true)
+        assert.equal(events[1].headers["false"], false)
+        assert.equal(events[1].headers.byte, -1)
+        assert.equal(events[1].headers.short, -2)
+        assert.equal(events[1].headers.int, -2)
+        assert.equal(events[1].headers.long, -3)
+        assert.equal(events[1].headers.bytes, "ok")
+        assert.equal(events[1].headers.time, -4)
+        assert.equal(events[1].headers.uuid, "1234567890abcdef")
         assert.equal(events[1].headers.text, "done")
-        assert.equal(events[1].headers["true"], nil)
         assert.equal(events[1].payload, "payload")
     end),
 
@@ -122,6 +139,38 @@ local tests = {
         events, err = decoder:feed(prelude .. u32(crc32(prelude)))
         assert.equal(events, nil)
         assert.matches(err, "headers length")
+    end),
+
+    test("rejects malformed header names and types", function()
+        local decoder = EventStream:new()
+        local events, err = decoder:feed(frame("\000", ""))
+        assert.equal(events, nil)
+        assert.matches(err, "header name")
+
+        decoder = EventStream:new()
+        events, err = decoder:feed(frame("\002a", ""))
+        assert.equal(events, nil)
+        assert.matches(err, "header name")
+
+        decoder = EventStream:new()
+        events, err = decoder:feed(frame("\001a", ""))
+        assert.equal(events, nil)
+        assert.matches(err, "header type")
+
+        decoder = EventStream:new()
+        events, err = decoder:feed(frame("\001a\007\000", ""))
+        assert.equal(events, nil)
+        assert.matches(err, "value length")
+
+        decoder = EventStream:new()
+        events, err = decoder:feed(frame("\001a\007\000\002x", ""))
+        assert.equal(events, nil)
+        assert.matches(err, "header value")
+
+        decoder = EventStream:new()
+        events, err = decoder:feed(frame("\001a\010", ""))
+        assert.equal(events, nil)
+        assert.matches(err, "header type")
     end),
 
     test("finish rejects a truncated stream", function()
