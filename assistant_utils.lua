@@ -586,7 +586,7 @@ end
   the current position and getTextFromXPointers requires both endpoints, so
   a nil end does not mean "to the end" here.
 --]]
-local function getDocumentEndXPointer(ui)
+function M.getDocumentEndXPointer(ui)
   -- Defensive: without a page count there is nothing to anchor the end
   -- probes on.
   local ok_count, page_count = pcall(function() return ui.document:getPageCount() end)
@@ -706,7 +706,7 @@ function M.extractCurrentChapterText(assistant)
           end_xp = ui.document:getPageXPointer(range.next_page)
         else
           -- Last chapter: extract to the true end of the document.
-          end_xp = getDocumentEndXPointer(ui)
+          end_xp = M.getDocumentEndXPointer(ui)
         end
       end
       book_text = ui.document:getTextFromXPointers(start_xp, end_xp) or ""
