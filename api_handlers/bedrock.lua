@@ -189,10 +189,7 @@ function BedrockHandler:backgroundRequest(url, headers, body)
 end
 
 function BedrockHandler:query(message_history, query_option)
-    local tools
-    if ToolExecutor.IsExtSearch(query_option.use_websearch or "none") then
-        tools = { self:buildExternalSearchToolDef("bedrock") }
-    end
+    local tools = ToolExecutor.buildTools("bedrock", query_option.use_websearch or "none", query_option.use_booksearch)
     local body = self:buildRequestBody(message_history, query_option, tools)
     if query_option.use_stream_mode then
         return self:backgroundRequest(self:getConverseStreamUrl(), self:headers(), json.encode(body))

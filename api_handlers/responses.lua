@@ -558,15 +558,16 @@ function ResponsesHandler:query(message_history, query_option)
     }
 
     local ws_mode = query_option.use_websearch or "none"
-    local tools
+    local tools = ToolExecutor.buildTools("responses", ws_mode, query_option.use_booksearch)
 
     -- Build tool definitions based on web search mode
     if ws_mode == "builtin" then
         -- Responses API native web_search tool — no external search needed
-        tools = { { type = "web_search" } }
-    elseif ToolExecutor.IsExtSearch(ws_mode) then
-        -- External search via function calling — Responses API flattened format
-        tools = { self:buildExternalSearchToolDef("responses") }
+        if tools then
+            table.insert(tools, 1, { type = "web_search" })
+        else
+            tools = { { type = "web_search" } }
+        end
     end
 
     local body = self:buildRequestBody(message_history, query_option, tools)

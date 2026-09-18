@@ -13,6 +13,7 @@ local T = require("ffi/util").template
 local strbuf = require("string.buffer")
 local json = require("rapidjson")
 local ExtTools = require("assistant_exttools")
+local BookTools = require("assistant_book_tools")
 local ASUtils = require("assistant_utils")
 local json_default = ASUtils.json_default
 
@@ -30,16 +31,15 @@ local SEARCH_API_NAMES = {
 ---- Build the messages_to_append list once a search result is available.
 ---- Called by Querier after it has executed the search API.
 ----
----- @param tool_call_result  table   the table returned by parseToolCalls (with __is_tool_call)
----- @param search_result     string  markdown text from the search API
+---- @param tool_call_result  table   tool calls and their normalized results
 ---- @return table  list of messages to append to message_history
 local function buildToolResultMessages(tool_call_result)
 
     local raw_assistant = tool_call_result.raw_assistant
     local format = tool_call_result.format
-    local results = tool_call_result.search_results
+    local results = tool_call_result.tool_results
 
-    local keywords = strbuf.new()
+    local summaries = strbuf.new()
     local msgs = {}
     if format == "anthropic" then
         table.insert(msgs, {
@@ -51,12 +51,12 @@ local function buildToolResultMessages(tool_call_result)
             table.insert(contents, {
                     type        = "tool_result",
                     tool_use_id = result.tool_call_id,
-                    content     = result.search_result,
+                    content     = result.tool_result,
                 })
-            keywords:putf("⌗ %s\n\n", result.search_keywords)
+            summaries:putf("%s: %s\n\n", result.tool_name, result.tool_summary)
         end
 
-        ASUtils.set_attr(msgs[#msgs], "search_keywords", keywords:get())
+        ASUtils.set_attr(msgs[#msgs], "tool_summaries", summaries:get())
         table.insert(msgs, {
             role    = "user",
             content = contents,
@@ -68,14 +68,14 @@ local function buildToolResultMessages(tool_call_result)
         for _, result in ipairs(results) do
             table.insert(parts, {
                     functionResponse = {
-                        name     = "assistant_web_search",
+                        name     = result.tool_name,
                         id       = result.tool_call_id,
-                        response = { result = result.search_result },
+                        response = { result = result.tool_result },
                     },
                 })
-            keywords:putf("⌗ %s\n\n", result.search_keywords)
+            summaries:putf("%s: %s\n\n", result.tool_name, result.tool_summary)
         end
-        ASUtils.set_attr(msgs[#msgs], "search_keywords", keywords:get())
+        ASUtils.set_attr(msgs[#msgs], "tool_summaries", summaries:get())
         table.insert(msgs, { role  = "user", parts = parts, })
 
     elseif format == "bedrock" then
@@ -85,11 +85,11 @@ local function buildToolResultMessages(tool_call_result)
         for _, result in ipairs(results) do
             table.insert(content, { toolResult = {
                 toolUseId = result.tool_call_id,
-                content = { { text = result.search_result } },
+                content = { { text = result.tool_result } },
             } })
-            keywords:putf("⌗ %s\n\n", result.search_keywords)
+            summaries:putf("%s: %s\n\n", result.tool_name, result.tool_summary)
         end
-        ASUtils.set_attr(msgs[pos], "search_keywords", keywords:get())
+        ASUtils.set_attr(msgs[pos], "tool_summaries", summaries:get())
         table.insert(msgs, { role = "user", content = content })
     else  -- "openai"
         table.insert(msgs, raw_assistant)
@@ -98,11 +98,11 @@ local function buildToolResultMessages(tool_call_result)
             table.insert(msgs, {
                 role         = "tool",
                 tool_call_id = result.tool_call_id,
-                content      = result.search_result,
+                content      = result.tool_result,
             })
-            keywords:putf("⌗ %s\n\n", result.search_keywords)
+            summaries:putf("%s: %s\n\n", result.tool_name, result.tool_summary)
         end
-        ASUtils.set_attr(msgs[pos], "search_keywords", keywords:get())
+        ASUtils.set_attr(msgs[pos], "tool_summaries", summaries:get())
     end
     return msgs
 end
@@ -180,6 +180,40 @@ function ToolExecutor.executeWebSearch(keywords, ws_mode, handler, tool_round)
     return search_ok, search_result
 end
 
+--- Execute one supported function call and normalize its native result.
+--- @return boolean success, table|string result
+function ToolExecutor.executeTool(assistant, tool_call, ws_mode, handler, tool_round)
+    local tool_call_id, name, args, err = ToolExecutor.extractToolCall(tool_call)
+    if err then return false, err end
+
+    local tool_result
+    local summary
+    if name == "assistant_web_search" then
+        local keywords = koutil.tableGetValue(args, "keywords") or koutil.tableGetValue(args, "query")
+        if type(keywords) ~= "string" or keywords == "" then
+            return false, _("Tool call did not include search keywords.")
+        end
+        local search_ok
+        search_ok, tool_result = ToolExecutor.executeWebSearch(keywords, ws_mode, handler, tool_round)
+        if not search_ok then return false, tool_result end
+        summary = keywords
+    elseif name == "assistant_search_book" then
+        local result, search_err = BookTools.search(assistant and assistant.ui, args)
+        if not result then return false, search_err end
+        tool_result = result
+        summary = koutil.tableGetValue(args, "query") or ""
+    else
+        return false, T(_("Unknown tool: %1"), tostring(name))
+    end
+
+    return true, {
+        tool_call_id = tool_call_id,
+        tool_name = name,
+        tool_result = tool_result,
+        tool_summary = summary,
+    }
+end
+
 -- ---------------------------------------------------------------------------
 -- Public interface: buildRawAssistantForToolCall
 -- ---------------------------------------------------------------------------
@@ -204,16 +238,19 @@ function ToolExecutor.buildRawAssistantForToolCall(tool_calls, format, contents)
             end
             table.insert(ret, tc)
         end
+        if contents and type(contents.content) == "string" and #contents.content > 0 then
+            table.insert(ret, { type = "text", text = contents.content })
+        end
         for tool_index, tc in ipairs(tool_calls) do
-            local id, kw, err = ToolExecutor.extractKeywords(tc)
+            local id, name, input, err = ToolExecutor.extractToolCall(tc)
             if err then
                 return false, err
             end
             table.insert(ret, {
                     type  = "tool_use",
                     id    = id,
-                    name  = "assistant_web_search",
-                    input = { keywords = kw },
+                    name  = name,
+                    input = input,
             })
         end
         return true, ret
@@ -221,11 +258,13 @@ function ToolExecutor.buildRawAssistantForToolCall(tool_calls, format, contents)
         -- Gemini expects a model turn (role="model")
         local parts = {}
         for _, tc in ipairs(tool_calls) do
+            local id, name, args, err = ToolExecutor.extractToolCall(tc)
+            if err then return false, err end
             table.insert(parts, {
                     functionCall = {
-                        name = "assistant_web_search",
-                        id   = tc.tool_call_id,
-                        args = { keywords = tc.keywords },
+                        name = name,
+                        id   = id,
+                        args = args,
                     },
                 })
             if contents and contents.signature then
@@ -262,12 +301,14 @@ function ToolExecutor.buildRawAssistantForToolCall(tool_calls, format, contents)
     else  -- "openai" (and compatible: groq, openrouter, deepseek, mistral, etc.)
         local raw_tool_calls = {}
         for _, tc in ipairs(tool_calls) do
+            local id, name, args, err = ToolExecutor.extractToolCall(tc)
+            if err then return false, err end
             table.insert(raw_tool_calls, {
-                    id        = tc.id,
+                    id        = id,
                     type     = "function",
                     ["function"] = {
-                        name      = tc.name,
-                        arguments = tc.arguments,
+                        name      = name,
+                        arguments = json.encode(args),
                     },
                 })
         end
@@ -287,7 +328,7 @@ end
 --- Build tool result messages and append them to message history.
 ---
 --- @param message_history    table   conversation history (modified in place)
---- @param tool_call_result   table   tool call descriptor with keywords, raw_assistant, format
+--- @param tool_call_result   table   tool call descriptor with raw_assistant, format, tool_results
 --- @return boolean success, string|nil error
 function ToolExecutor.appendToolResult(message_history, tool_call_result)
 
@@ -319,39 +360,22 @@ function ToolExecutor.extractKeywords(tool_call)
     if type(tool_call) ~= "table" then
         return nil, nil, _("Tool call did not include id.")
     end
-
-    local keywords, id
-    local args = koutil.tableGetValue(tool_call, "args")
-    local input = koutil.tableGetValue(tool_call, "input")
-    local arguments = koutil.tableGetValue(tool_call, "arguments")
-
-    if args ~= nil then
-        -- Gemini: args is already a table
-        id = koutil.tableGetValue(tool_call, "tool_call_id") or koutil.tableGetValue(tool_call, "id")
-        if type(args) == "table" then
-            keywords = koutil.tableGetValue(args, "keywords")
-        end
-    elseif arguments ~= nil then
-        -- OpenAI: arguments is a JSON string
-        if type(arguments) == "string" then
-            local ok_j, decoded = pcall(json.decode, arguments)
-            if ok_j and type(decoded) == "table" then
-                keywords = json_default(koutil.tableGetValue(decoded, "keywords"))
-                    or json_default(koutil.tableGetValue(decoded, "query"))
-            end
-        end
-        id = koutil.tableGetValue(tool_call, "tool_call_id") or koutil.tableGetValue(tool_call, "id")
-    elseif input ~= nil then
-        -- Anthropic / Bedrock
-        id = koutil.tableGetValue(tool_call, "tool_call_id") or koutil.tableGetValue(tool_call, "id")
-        if type(input) == "table" then
-            keywords = koutil.tableGetValue(input, "keywords")
-        end
-    end
-
-    if not id then
+    local id = koutil.tableGetValue(tool_call, "tool_call_id") or koutil.tableGetValue(tool_call, "id")
+    if type(id) ~= "string" or id == "" then
         return nil, nil, _("Tool call did not include id.")
     end
+    local args = koutil.tableGetValue(tool_call, "args") or koutil.tableGetValue(tool_call, "input")
+    if args == nil then
+        local arguments = koutil.tableGetValue(tool_call, "arguments")
+        if type(arguments) == "string" then
+            local ok, decoded = pcall(json.decode, arguments)
+            args = ok and decoded or nil
+        end
+    end
+    if type(args) ~= "table" then
+        return nil, nil, _("Tool call did not include search keywords.")
+    end
+    local keywords = koutil.tableGetValue(args, "keywords") or koutil.tableGetValue(args, "query")
     if type(keywords) == "table" and #keywords > 0 then
         keywords = keywords[1]
     end
@@ -360,6 +384,31 @@ function ToolExecutor.extractKeywords(tool_call)
     end
 
     return id, keywords, nil
+end
+
+--- Extract an id, name, and decoded argument object from every supported wire format.
+function ToolExecutor.extractToolCall(tool_call)
+    if type(tool_call) ~= "table" then
+        return nil, nil, nil, _("Tool call did not include id.")
+    end
+
+    local id = koutil.tableGetValue(tool_call, "tool_call_id") or koutil.tableGetValue(tool_call, "id")
+    if type(id) ~= "string" or id == "" then
+        return nil, nil, nil, _("Tool call did not include id.")
+    end
+    local name = koutil.tableGetValue(tool_call, "name")
+    local args = koutil.tableGetValue(tool_call, "args") or koutil.tableGetValue(tool_call, "input")
+    if args == nil then
+        local arguments = koutil.tableGetValue(tool_call, "arguments")
+        if type(arguments) == "string" then
+            local ok, decoded = pcall(json.decode, arguments)
+            args = ok and decoded or nil
+        end
+    end
+    if type(name) ~= "string" or name == "" or type(args) ~= "table" then
+        return nil, nil, nil, _("Tool call did not include valid arguments.")
+    end
+    return id, name, args, nil
 end
 
 --- Get the handler format based on handler name.
@@ -405,7 +454,7 @@ function ToolExecutor.parseToolCallsResponse(responseData, format)
                 if block.type == "text" then
                     text_block = block
                 end
-                if block.type == "tool_use" and block.input and block.input.keywords then
+                if block.type == "tool_use" then
                     table.insert(toolcall_blocks, block)
                 end
             end
@@ -433,6 +482,7 @@ function ToolExecutor.parseToolCallsResponse(responseData, format)
                     local fn_call   = part.functionCall 
                     table.insert(tool_calls, {
                         tool_call_id = fn_call.id or fn_call.name,
+                        name = fn_call.name,
                         args = fn_call.args
                     })
                 end
@@ -630,6 +680,72 @@ Return exactly one concise search query string.]]
             },
         }
     end
+end
+
+--- Build the always-available, read-only full-book search function definition.
+function ToolExecutor.buildBookSearchToolDef(format)
+    local param_schema = {
+        type = "object",
+        properties = {
+            query = {
+                type = "string",
+                description = "Exact text or phrase to find in the book",
+            },
+            max_results = {
+                type = "integer",
+                description = "Maximum matching excerpts to return, from 1 to 10",
+            },
+            context_words = {
+                type = "integer",
+                description = "Words of surrounding context on each side, from 1 to 120",
+            },
+        },
+        required = { "query" },
+    }
+    local description = [[Search the complete current book for a literal text or phrase.
+Use this only when the answer depends on a passage elsewhere in the book.
+Matching ignores case and whitespace. Results are page-labelled excerpts.]]
+
+    if format == "anthropic" then
+        return { name = "assistant_search_book", description = description, input_schema = param_schema }
+    elseif format == "gemini" then
+        return { function_declarations = {
+            { name = "assistant_search_book", description = description, parameters = param_schema },
+        } }
+    elseif format == "responses" then
+        return { type = "function", name = "assistant_search_book", description = description, parameters = param_schema }
+    elseif format == "bedrock" then
+        return { toolSpec = {
+            name = "assistant_search_book", description = description, inputSchema = { json = param_schema },
+        } }
+    end
+    return { type = "function", ["function"] = {
+        name = "assistant_search_book", description = description, parameters = param_schema,
+    } }
+end
+
+--- Return the local book tool plus optional configured external web search.
+--- Gemini accepts all function declarations inside one tool object; other APIs
+--- accept a list of tool definitions.
+function ToolExecutor.buildTools(format, ws_mode, use_booksearch)
+    local has_web_search = ToolExecutor.IsExtSearch(ws_mode)
+    if not use_booksearch and not has_web_search then return nil end
+    local book_tool = use_booksearch and ToolExecutor.buildBookSearchToolDef(format) or nil
+    if format == "gemini" then
+        local tools = book_tool or { function_declarations = {} }
+        if has_web_search then
+            local web_tool = ToolExecutor.buildExternalSearchToolDef(format)
+            table.insert(tools.function_declarations, web_tool.function_declarations[1])
+        end
+        return tools
+    end
+
+    local tools = {}
+    if book_tool then table.insert(tools, book_tool) end
+    if has_web_search then
+        table.insert(tools, ToolExecutor.buildExternalSearchToolDef(format))
+    end
+    return tools
 end
 
 return ToolExecutor

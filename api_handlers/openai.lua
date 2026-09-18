@@ -135,10 +135,7 @@ function OpenAIHandler:query(message_history, query_option)
     }
 
     local ws_mode = query_option.use_websearch or "none"
-    local tools
-    if ToolExecutor.IsExtSearch(ws_mode) then
-        tools = { self:buildExternalSearchToolDef("openai") }
-    end
+    local tools = ToolExecutor.buildTools("openai", ws_mode, query_option.use_booksearch)
     local body = self:buildRequestBody(message_history, query_option, tools)
 
     -- -----------------------------------------------------------------------

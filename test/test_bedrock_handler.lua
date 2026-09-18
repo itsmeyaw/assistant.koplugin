@@ -101,7 +101,7 @@ local tests = {
         assert.equal("object", tool.toolSpec.inputSchema.json.type)
         local history = {}
         local ok = ToolExecutor.appendToolResult(history, { format = "bedrock", raw_assistant = {
-            role = "assistant", content = {} }, search_results = { { tool_call_id = "x", search_result = "found", search_keywords = "q" } } })
+            role = "assistant", content = {} }, tool_results = { { tool_call_id = "x", tool_name = "assistant_web_search", tool_result = "found", tool_summary = "q" } } })
         assert.isTrue(ok)
         assert.equal("found", history[2].content[1].toolResult.content[1].text)
         local raw_ok, raw = ToolExecutor.buildRawAssistantForToolCall({ { tool_call_id = "x", name = "assistant_web_search",

@@ -150,7 +150,7 @@ function GeminiHandler:buildRequestBody(messages, tool_def)
         table.insert(system_instruction.parts, { text = system_content:gsub("\n$", "") })
     end
 
-    local tools = tool_def and { tool_def } or nil
+    local tools = tool_def and (tool_def.function_declarations and { tool_def } or tool_def) or nil
     local gc = buildGenerationConfig(self.additional_parameters)
 
     local body = {
@@ -203,11 +203,13 @@ function GeminiHandler:query(message_history, query_option)
     local ws_mode = query_option.use_websearch or "none"
 
     -- Apply built-in Google Search grounding if requested
-    local tools = nil
+    local tools
     if ws_mode == "builtin" then
-        tools = { google_search = {} }
-    elseif ToolExecutor.IsExtSearch(ws_mode) then
-        tools = self:buildExternalSearchToolDef("gemini")
+        tools = { { google_search = {} } }
+        local book_tools = ToolExecutor.buildTools("gemini", "none", query_option.use_booksearch)
+        if book_tools then table.insert(tools, book_tools) end
+    else
+        tools = ToolExecutor.buildTools("gemini", ws_mode, query_option.use_booksearch)
     end
     local requestBody = self:buildRequestBody(message_history, tools)
 

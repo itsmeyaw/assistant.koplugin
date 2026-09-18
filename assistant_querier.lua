@@ -318,65 +318,56 @@ function Querier:query(message_history, title)
     -- The expression below always yields a string: the boolean only gates whether
     -- the user's configured search provider is used.
     local prompt_websearch   = ASUtils.get_attr(message_history[#message_history], "use_websearch", false)
+    local prompt_booksearch  = ASUtils.get_attr(message_history[#message_history], "use_booksearch", false)
     local user_setting_ws    = self.settings:readSetting("use_websearch", "none")
     local query_option = {
         use_stream_mode = self.settings:readSetting("use_stream_mode", true),
         use_websearch   = (prompt_websearch and user_setting_ws ~= "none")
                           and user_setting_ws or "none",
+        use_booksearch  = prompt_booksearch,
     }
 
     local is_added_maximum_prompt = false
 
     -- reuseable function for both strem mode / non-strem mode
-    local function executeSearch(tool_calls_array, tool_rounds)
+    local function executeTools(tool_calls_array, tool_rounds)
         local err
-        local search_results = {}
+        local tool_results = {}
         for i, tool_call in ipairs(tool_calls_array) do
-
-            -- Decode keywords from tool call arguments
-            local tool_call_id, keywords, extract_err = ToolExecutor.extractKeywords(tool_call)
-            if extract_err or not tool_call_id or not keywords then
-                err = extract_err
-                logger.warn("executeSearch", err, "tool_call", select(2, pcall(rapidjson.encode, tool_call)):sub(1, 200))
-                break
-            end
-
-            -- Execute web search via ToolExecutor
-            local search_ok, search_result
+            local tool_ok, tool_result
             if tool_rounds+i <= MAX_TOOL_ROUNDS then
-                search_ok, search_result = ToolExecutor.executeWebSearch(keywords,
-                            query_option.use_websearch,
-                            self.handler, tool_rounds+i)
+                tool_ok, tool_result = ToolExecutor.executeTool(self.assistant, tool_call,
+                    query_option.use_websearch, self.handler, tool_rounds+i)
             else
                 is_added_maximum_prompt = true
-                search_ok = true
-                search_result = Prompts.maximum_tool_use_prompt
+                tool_ok = true
+                local tool_call_id, tool_name = ToolExecutor.extractToolCall(tool_call)
+                tool_result = {
+                    tool_call_id = tool_call_id,
+                    tool_name = tool_name,
+                    tool_result = Prompts.maximum_tool_use_prompt,
+                    tool_summary = "limit reached",
+                }
             end
-            if not search_ok then
-                err = search_result or "Not all search succeeds"
+            if not tool_ok then
+                err = tool_result or "Tool execution failed"
                 if err ~= self.handler.CODE_CANCELLED then
-                    logger.warn("search err", err)
+                    logger.warn("tool err", err)
                 end
                 break
             end
-            table.insert(search_results, {
-                search_keywords = keywords,
-                search_result = search_result,
-                tool_call_id = tool_call_id,
-            })
+            table.insert(tool_results, tool_result)
         end
 
-        -- Append a "maximum tool used" result notice to the LLM
-        -- should be stop calling tools the next round
-        if not is_added_maximum_prompt and (tool_rounds + #search_results >= MAX_TOOL_ROUNDS) then
-            search_results[#search_results].search_result =
-                search_results[#search_results].search_result .. Prompts.maximum_tool_use_prompt
+        if not is_added_maximum_prompt and (tool_rounds + #tool_results >= MAX_TOOL_ROUNDS) then
+            tool_results[#tool_results].tool_result =
+                tool_results[#tool_results].tool_result .. Prompts.maximum_tool_use_prompt
         end
 
         if err then
             return false, err
         end
-        return true, search_results
+        return true, tool_results
     end
 
 
@@ -487,23 +478,23 @@ function Querier:query(message_history, title)
                     break
                 end
 
-                local search_ok, search_results
-                search_ok, search_results = executeSearch(tool_calls_array, tool_rounds)
-                if not search_ok then
+                local tools_ok, tool_results
+                tools_ok, tool_results = executeTools(tool_calls_array, tool_rounds)
+                if not tools_ok then
                     res = nil
-                    err = search_results
+                    err = tool_results
                     if err ~= self.handler.CODE_CANCELLED then
-                        logger.warn("failed to executeSearch at round", tool_rounds, "DETAIL", tostring(search_results):sub(1, 200),
+                        logger.warn("failed to executeTools at round", tool_rounds, "DETAIL", tostring(tool_results):sub(1, 200),
                                             "content=" .. tostring(content):sub(1, 200), "tool_calls=#" .. #tool_calls_array)
                     end
                     break
                 end
-                tool_rounds = tool_rounds + #search_results
+                tool_rounds = tool_rounds + #tool_results
 
                 local append_ok, append_err = ToolExecutor.appendToolResult(message_history, {
                         raw_assistant  = raw_assistant,
                         format         = format,
-                        search_results = search_results,
+                        tool_results = tool_results,
                 })
 
                 if not append_ok then
@@ -561,25 +552,22 @@ function Querier:query(message_history, title)
                 end
 
                 -- Build tool result and append to history
-                local search_ok, search_results
-                if tool_rounds < MAX_TOOL_ROUNDS then
-                    search_ok, search_results = executeSearch(res.tool_calls, tool_rounds)
-                end
-                if not search_ok then
+                local tools_ok, tool_results = executeTools(res.tool_calls, tool_rounds)
+                if not tools_ok then
                     res = nil
-                    err = search_results
+                    err = tool_results
                     if err ~= self.handler.CODE_CANCELLED then
-                        logger.warn("failed to executeSearch", "res=" .. tostring(res):sub(1, 200))
+                        logger.warn("failed to executeTools", "res=" .. tostring(res):sub(1, 200))
                     end
                     break
                 end
-                tool_rounds = tool_rounds + #search_results
+                tool_rounds = tool_rounds + #tool_results
 
                 local format = ToolExecutor.getHandlerFormat(self.handler_name)
                 local append_ok, append_err = ToolExecutor.appendToolResult(message_history, {
                         raw_assistant  = res.raw_assistant,
                         format         = format,
-                        search_results = search_results,
+                        tool_results = tool_results,
                 })
 
                 if not append_ok then
