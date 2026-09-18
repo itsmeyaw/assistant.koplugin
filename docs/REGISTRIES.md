@@ -22,7 +22,7 @@ Two registries own everything configured from the UI. Both store JSON in `LuaSet
 
 ## Search Registry (`assistant_search_registry.lua`, `SearchRegistry`)
 
-- Storage: `ui_search_tools` JSON. Uses **fixed tool keys** (`serpapi`, `tavilyapi`, `exaapi`, `searxngapi`) rather than `custom:N`; `SEARCH_TOOLS` defines the keys and their schema. Engines: SerpAPI, Tavily, SearXNG, Exa. UI tools are added via Settings → Search Tools.
+- Storage: `ui_search_tools` JSON. Uses **fixed tool keys** (`serpapi`, `tavilyapi`, `exaapi`, `searxngapi`, `bravesearchapi`) rather than `custom:N`; `SEARCH_TOOLS` defines the keys and their schema. Engines: SerpAPI, Tavily, SearXNG, Exa, Brave Search. UI tools are added via Settings → Search Tools.
 - `load`/`save`/`merge`/`validate`/`upsert`/`installSearchTool`/`delete`/`is_deletable` mirror the provider registry's `source`/`immutable` pattern (file tools `source="file"`, immutable; only UI tools are deletable). `merge` keys by tool key.
 - `upsert` validates and then stores from the normalized record; `installSearchTool` reuses that record.
 - `ToolExecutor` loads enabled (non-empty `api_key`) tools at query time and passes them into the handler's tool definitions.

@@ -1,5 +1,5 @@
 -- test_exttools.lua
--- Tests for assistant_exttools.lua: SerpAPI, Tavily, SearXNG, Exa.ai, and SearchToolBase.
+-- Tests for assistant_exttools.lua: SerpAPI, Tavily, SearXNG, Exa.ai, Brave Search, and SearchToolBase.
 local helper = require("test.helper")
 local assert = helper.assert
 local extools = helper.extools
@@ -276,6 +276,41 @@ local tests = {
     end),
 
     -- =========================================================================
+    -- Brave Search: SearchKeywords
+    -- =========================================================================
+
+    test("Brave Search: sends the subscription token and formats results", function()
+        extools.bravesearchapi.api_key = "brave-key"
+        local original_base_url = extools.bravesearchapi.base_url
+        extools.bravesearchapi.base_url = nil
+        local original_fetch = helper.ASUtils.fetchJSON
+        local request
+        helper.ASUtils.fetchJSON = function(url, headers)
+            request = { url = url, headers = headers }
+            return { web = { results = {
+                { title = "Brave Result", description = "A Brave snippet." },
+            } } }
+        end
+        local ok, result = extools.bravesearchapi:SearchKeywords("test query")
+        helper.ASUtils.fetchJSON = original_fetch
+        extools.bravesearchapi.base_url = original_base_url
+        assert.isTrue(ok)
+        assert.matches(request.url, "api%.search%.brave%.com/res/v1/web/search")
+        assert.matches(request.url, "count=5")
+        assert.equal(request.headers["X-Subscription-Token"], "brave-key")
+        assert.matches(result, "Brave Search Results")
+        assert.matches(result, "Brave Result")
+        assert.matches(result, "A Brave snippet%.")
+    end),
+
+    test("Brave Search: missing results returns error", function()
+        helper.mockFetchJSON({ { parsed = {}, err = nil } })
+        local ok, err = extools.bravesearchapi:SearchKeywords("test query")
+        assert.isFalse(ok)
+        assert.equal(err, "No Brave Search results found.")
+    end),
+
+    -- =========================================================================
     -- Module return table shape
     -- =========================================================================
 
@@ -286,10 +321,11 @@ local tests = {
         assert.notNil(extools.tavilyapi)
         assert.notNil(extools.searxngapi)
         assert.notNil(extools.exaapi)
+        assert.notNil(extools.bravesearchapi)
     end),
 
     test("all tools have expected properties", function()
-        local tools = { "serpapi", "tavilyapi", "searxngapi", "exaapi" }
+        local tools = { "serpapi", "tavilyapi", "searxngapi", "exaapi", "bravesearchapi" }
         for _, key in ipairs(tools) do
             local tool = extools[key]
             assert.notNil(tool, key .. " should exist")

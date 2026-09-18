@@ -258,6 +258,41 @@ function exaai:SearchKeywords(keywords, trap_widget)
     return true, segments:get()
 end
 
+local bravesearch = SearchToolBase:new({
+    name = "Brave Search", base_url = "https://api.search.brave.com",
+    is_external = true,
+})
+function bravesearch:SearchKeywords(keywords, trap_widget)
+    local base_url = self.base_url or "https://api.search.brave.com"
+    local url = T("%1/res/v1/web/search?q=%2&count=5", base_url, koutil.urlEncode(keywords))
+    local headers = { ["X-Subscription-Token"] = self.api_key }
+    local parsed, err = ASUtils.fetchJSON(url, headers, trap_widget, 45, 120)
+    if not parsed then
+        if err == ASUtils.HANDLERCODE.CODE_CANCELLED then
+            return false, ASUtils.HANDLERCODE.CODE_CANCELLED
+        end
+        return false, err
+    end
+
+    local results = koutil.tableGetValue(parsed, "web", "results")
+    if type(results) ~= "table" then
+        return false, _("No Brave Search results found.")
+    end
+
+    local segments = strbuf.new()
+    segments:put("## Brave Search Results:\n")
+    for i, item in ipairs(results) do
+        segments:put("---\n")
+        segments:putf("### Source %d: %s\n", i,
+            json_default(koutil.tableGetValue(item, "title"), "Untitled"))
+        segments:put("* Summary: ")
+        segments:put(json_default(koutil.tableGetValue(item, "description"), ""))
+        segments:put("\n")
+    end
+    segments:put("\n")
+    return true, segments:get()
+end
+
 return {
     none = SearchToolBase:new{name = _("None")},
     builtin = SearchToolBase:new{name = _("Model Built-In")},
@@ -265,4 +300,5 @@ return {
     tavilyapi = tavily,
     searxngapi = searxng,
     exaapi    = exaai,
+    bravesearchapi = bravesearch,
 }

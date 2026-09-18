@@ -26,6 +26,7 @@ local SEARCH_API_NAMES = {
     "tavilyapi",
     "exaapi",
     "searxngapi",
+    "bravesearchapi",
  }
 
 ---- Build the messages_to_append list once a search result is available.

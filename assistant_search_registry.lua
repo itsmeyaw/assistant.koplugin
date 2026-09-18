@@ -6,7 +6,7 @@
 -- CONFIGURATION.provider_settings table.
 --
 -- Each UI search tool record uses a fixed tool key (serpapi, tavilyapi, exaapi,
--- searxngapi) and fields: api_key or base_url (display_name is NOT stored).
+-- searxngapi, bravesearchapi) and fields: api_key or base_url (display_name is NOT stored).
 --
 -- File search tools are imported as-is with source="file", immutable=true
 -- injected. UI search tools override file config with the same tool key.
@@ -32,10 +32,11 @@ SearchRegistry.SEARCH_TOOLS = {
     tavilyapi  = { needs = "api_key",  display_name = "Tavily" },
     exaapi     = { needs = "api_key",  display_name = "Exa.ai" },
     searxngapi = { needs = "base_url", display_name = "SearXNG" },
+    bravesearchapi = { needs = "api_key", display_name = "Brave Search" },
 }
 
 -- All fixed tool keys as an ordered list
-SearchRegistry.TOOL_KEYS = { "serpapi", "tavilyapi", "exaapi", "searxngapi" }
+SearchRegistry.TOOL_KEYS = { "serpapi", "tavilyapi", "exaapi", "searxngapi", "bravesearchapi" }
 
 ----------------------------------------------------------------------
 -- Load / Save
@@ -97,7 +98,7 @@ end
 
 --- Validate a search tool record before saving.
 ---@param record table The search tool fields to validate
----@param tool_key string The tool key (serpapi, tavilyapi, exaapi, searxngapi)
+---@param tool_key string The tool key (serpapi, tavilyapi, exaapi, searxngapi, bravesearchapi)
 ---@return boolean ok
 ---@return string|nil err
 function SearchRegistry.validate(record, tool_key)
@@ -290,7 +291,7 @@ end
 ----------------------------------------------------------------------
 
 --- Build the "WebSearch API" menu item for the Settings submenu.
---- Returns a TouchMenu item with a sub-menu listing the four search tools.
+--- Returns a TouchMenu item with a sub-menu listing the configured search tools.
 ---@param assistant table The Assistant instance
 ---@return table menu item spec
 function SearchRegistry.getAddWebSearchMenuItem(assistant)

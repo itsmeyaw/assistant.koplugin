@@ -152,6 +152,10 @@ local CONFIGURATION = {
             -- Free tier: 100 searches/month. Get key at https://dashboard.exa.ai/api-keys
             -- Docs: https://exa.ai/docs/reference/search-api-guide-for-coding-agents
             api_key = "your-exa-api-key"
+        },
+        bravesearchapi = {
+            -- External Search Tool API: Brave Search. Get a key at https://api.search.brave.com/
+            api_key = "your-brave-search-api-key"
         }
     },
 

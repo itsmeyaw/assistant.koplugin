@@ -747,10 +747,10 @@ end
 
 --- Show a dialog for adding or editing a web search API tool.
 --- Reuses MultiInputDialog style. Only shows the credential field:
----   - API key tools (SerpAPI, Tavily, Exa): API Key field only
+---   - API key tools (SerpAPI, Tavily, Exa, Brave Search): API Key field only
 ---   - Base URL tools (SearXNG): Base URL field only
 --- The display name comes from SEARCH_TOOLS and is not user-editable.
----@param tool_key string The fixed tool key (serpapi, tavilyapi, exaapi, searxngapi)
+---@param tool_key string The fixed tool key (serpapi, tavilyapi, exaapi, searxngapi, bravesearchapi)
 function Assistant:_showAddWebSearchDialog(tool_key)
     local tool_def = SearchRegistry.SEARCH_TOOLS[tool_key]
     if not tool_def then return end

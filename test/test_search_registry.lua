@@ -90,25 +90,28 @@ local tests = {
     -- SEARCH_TOOLS / TOOL_KEYS exported
     -- =========================================================================
 
-    test("SEARCH_TOOLS defines all four tools", function()
+    test("SEARCH_TOOLS defines all five tools", function()
         assert.notNil(SearchRegistry.SEARCH_TOOLS.serpapi)
         assert.notNil(SearchRegistry.SEARCH_TOOLS.tavilyapi)
         assert.notNil(SearchRegistry.SEARCH_TOOLS.exaapi)
         assert.notNil(SearchRegistry.SEARCH_TOOLS.searxngapi)
+        assert.notNil(SearchRegistry.SEARCH_TOOLS.bravesearchapi)
     end),
 
-    test("TOOL_KEYS lists all four keys in order", function()
-        assert.equal(#SearchRegistry.TOOL_KEYS, 4)
+    test("TOOL_KEYS lists all five keys in order", function()
+        assert.equal(#SearchRegistry.TOOL_KEYS, 5)
         assert.equal(SearchRegistry.TOOL_KEYS[1], "serpapi")
         assert.equal(SearchRegistry.TOOL_KEYS[2], "tavilyapi")
         assert.equal(SearchRegistry.TOOL_KEYS[3], "exaapi")
         assert.equal(SearchRegistry.TOOL_KEYS[4], "searxngapi")
+        assert.equal(SearchRegistry.TOOL_KEYS[5], "bravesearchapi")
     end),
 
     test("API key tools have needs=api_key", function()
         assert.equal(SearchRegistry.SEARCH_TOOLS.serpapi.needs, "api_key")
         assert.equal(SearchRegistry.SEARCH_TOOLS.tavilyapi.needs, "api_key")
         assert.equal(SearchRegistry.SEARCH_TOOLS.exaapi.needs, "api_key")
+        assert.equal(SearchRegistry.SEARCH_TOOLS.bravesearchapi.needs, "api_key")
     end),
 
     test("SearXNG has needs=base_url", function()
@@ -120,6 +123,7 @@ local tests = {
         assert.equal(SearchRegistry.SEARCH_TOOLS.tavilyapi.display_name, "Tavily")
         assert.equal(SearchRegistry.SEARCH_TOOLS.exaapi.display_name, "Exa.ai")
         assert.equal(SearchRegistry.SEARCH_TOOLS.searxngapi.display_name, "SearXNG")
+        assert.equal(SearchRegistry.SEARCH_TOOLS.bravesearchapi.display_name, "Brave Search")
     end),
 
     -- =========================================================================
@@ -236,6 +240,13 @@ local tests = {
         local ok, err = SearchRegistry.validate({
         }, "exaapi")
         assert.isFalse(ok)
+    end),
+
+    test("validate passes for bravesearchapi with api_key", function()
+        local ok, err = SearchRegistry.validate({
+            api_key = "BSA-123",
+        }, "bravesearchapi")
+        assert.isTrue(ok, err)
     end),
 
     test("validate passes for searxngapi with base_url", function()
@@ -539,11 +550,11 @@ local tests = {
         assert.notNil(item.sub_item_table_func)
     end),
 
-    test("sub-menu lists all four search tools", function()
+    test("sub-menu lists all five search tools", function()
         local assistant = mockAssistant()
         local item = SearchRegistry.getAddWebSearchMenuItem(assistant)
         local sub_items = item.sub_item_table_func()
-        assert.equal(#sub_items, 4)
+        assert.equal(#sub_items, 5)
     end),
 
     test("sub-menu items have text_func returning correct display names", function()
@@ -554,6 +565,7 @@ local tests = {
         assert.equal(sub_items[2].text_func(), "☐ Tavily")
         assert.equal(sub_items[3].text_func(), "☐ Exa.ai")
         assert.equal(sub_items[4].text_func(), "☐ SearXNG")
+        assert.equal(sub_items[5].text_func(), "☐ Brave Search")
     end),
 
     test("sub-menu items show checkmark when configured via API key", function()
