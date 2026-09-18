@@ -635,6 +635,7 @@ function ChatGPTViewer:askAnotherQuestion(simple_mode)
   -- Initialize default options
   local default_options = {}
   local use_web_search_checkbox -- ref to the web search CheckButton widget
+  local use_book_search_checkbox -- ref to the book search CheckButton widget
   
   -- Load additional prompts from configuration if available
   local sorted_prompts = Prompts.getSortedPrompts(function (prompt)
@@ -656,7 +657,7 @@ function ChatGPTViewer:askAnotherQuestion(simple_mode)
   for _, tab in ipairs(sorted_prompts) do
     table.insert(default_options, {
       text = tab.text,
-      callback = function(dialog)
+      callback = function(dialog, use_booksearch)
         if not dialog then return end
         local input_text = dialog:getInputText()
         UIManager:close(dialog)
@@ -674,7 +675,7 @@ function ChatGPTViewer:askAnotherQuestion(simple_mode)
         local prompt_config = merged_prompts[tab.idx]
         prompt_config.user_input = input_text
         if self.onAskQuestion then
-          self.onAskQuestion(self, prompt_config)
+          self.onAskQuestion(self, prompt_config, nil, use_booksearch)
         end
       end
     })
@@ -707,11 +708,12 @@ function ChatGPTViewer:askAnotherQuestion(simple_mode)
           Device.input.setClipboardText(question)
         end
         local use_websearch = use_web_search_checkbox and use_web_search_checkbox.checked or false
+        local use_booksearch = use_book_search_checkbox and use_book_search_checkbox.checked or false
         UIManager:close(self.input_dialog)
         self.input_dialog = nil
         
         if self.onAskQuestion then
-          self.onAskQuestion(self, question, use_websearch) -- question is string (user input)
+          self.onAskQuestion(self, question, use_websearch, use_booksearch) -- question is string (user input)
         end
       end
     }
@@ -735,7 +737,7 @@ function ChatGPTViewer:askAnotherQuestion(simple_mode)
           end
           UIManager:close(dialog)
           self.input_dialog = nil
-          option.callback(dialog)
+          option.callback(dialog, use_book_search_checkbox and use_book_search_checkbox.checked or false)
         end
       })
     end
@@ -767,7 +769,7 @@ function ChatGPTViewer:askAnotherQuestion(simple_mode)
     buttons = button_rows,
   }
 
-  -- Add web search checkbox below the input field
+  -- Add search options below the input field
   local web_search_available = self.assistant.settings:readSetting("use_websearch", "none") ~= "none"
   local saved_web_search = self.assistant.settings:readSetting("ask_use_websearch", false)
   use_web_search_checkbox = CheckButton:new{
@@ -781,10 +783,23 @@ function ChatGPTViewer:askAnotherQuestion(simple_mode)
       self.assistant.updated = true
     end,
   }
+  use_book_search_checkbox = CheckButton:new{
+    face = Font:getFace("xx_smallinfofont"),
+    text = _("Search Book"),
+    parent = self.input_dialog,
+    checked = self.assistant.settings:readSetting("ask_use_booksearch", false),
+    enabled = self.assistant.ui and self.assistant.ui.document ~= nil,
+    callback = function()
+      self.assistant.settings:saveSetting("ask_use_booksearch", use_book_search_checkbox.checked)
+      self.assistant.updated = true
+    end,
+  }
   local vgroup = self.input_dialog.dialog_frame[1]
   table.insert(vgroup, 2, HorizontalGroup:new{
     HorizontalSpan:new{ width = Size.padding.large },
     use_web_search_checkbox,
+    HorizontalSpan:new{ width = Size.padding.large },
+    use_book_search_checkbox,
   })
 
   -- add close button (top right cross) to input dialog

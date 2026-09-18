@@ -204,8 +204,12 @@ function AssistantDialog:_createResultText(highlightedText, message_history, pre
       return user_message:get()
     elseif message.role == "assistant" then
       local assistant_content, answer_type
+      local tool_summaries = ASUtils.get_attr(message, "tool_summaries")
       local kw = ASUtils.get_attr(message, "search_keywords")
-      if kw then
+      if tool_summaries then
+        answer_type = _("Tool")
+        assistant_content = string.format("%s\n\n", tool_summaries)
+      elseif kw then
         answer_type = _("Search")
         assistant_content = string.format("%s\n\n", kw)
       else
@@ -289,7 +293,7 @@ function AssistantDialog:_showResultViewer(highlightedText, message_history, tit
     ui = self.assistant.ui,
     -- Hide Add Note button when invoked via gesture (no highlighted text)
     disable_add_note = (not highlightedText or highlightedText == ""),
-    onAskQuestion = function(viewer, user_question, use_websearch) -- callback for user entered question
+    onAskQuestion = function(viewer, user_question, use_websearch, use_booksearch) -- callback for user entered question
         -- Use viewer's own highlighted_text value
         local current_highlight = viewer.highlighted_text or highlightedText
         local viewer_title = ""
@@ -304,7 +308,8 @@ function AssistantDialog:_showResultViewer(highlightedText, message_history, tit
               if v ~= nil then inherited_suggestions = v; break end
             end
           end
-          self:_prepareMessageHistoryForUserQuery(message_history, current_highlight, user_question, use_websearch)
+          self:_prepareMessageHistoryForUserQuery(message_history, current_highlight, user_question,
+            use_websearch, use_booksearch)
           if inherited_suggestions ~= nil then
             pending_show_suggestions = inherited_suggestions
             -- _prepare already set inherited value, but ensure the last user reflects it
@@ -334,6 +339,7 @@ function AssistantDialog:_showResultViewer(highlightedText, message_history, tit
           -- set these attributes in metatable (won't be encoded to API calls)
           ASUtils.set_attr(_user, "user_input", user_question.user_input)
           ASUtils.set_attr(_user, "use_websearch", user_question.use_websearch)
+          ASUtils.set_attr(_user, "use_booksearch", use_booksearch or false)
           pending_show_suggestions = Prompts.isSuggestionsEnabled(self.assistant.settings, user_question)
           ASUtils.set_attr(_user, "show_suggestions", pending_show_suggestions)
           table.insert(message_history, _user)
@@ -424,7 +430,7 @@ I have a question about this book.]], book.title, book.author)
   return msg
 end
 
-function AssistantDialog:_prepareMessageHistoryForUserQuery(message_history, highlightedText, user_question, use_websearch)
+function AssistantDialog:_prepareMessageHistoryForUserQuery(message_history, highlightedText, user_question, use_websearch, use_booksearch)
   local context = self:_buildBookContextMessage(highlightedText)
   table.insert(message_history, context)
 
@@ -447,6 +453,7 @@ function AssistantDialog:_prepareMessageHistoryForUserQuery(message_history, hig
     content = user_question
   }
   ASUtils.set_attr(question_message, "use_websearch", use_websearch or false)
+  ASUtils.set_attr(question_message, "use_booksearch", use_booksearch or false)
   ASUtils.set_attr(question_message, "show_suggestions", show_suggestions)
   table.insert(message_history, question_message)
 end
@@ -497,6 +504,7 @@ function AssistantDialog:showAskDialog(highlightedText)
   local use_book_text_checkbox -- ref to the CheckButton widget
   local use_chapter_checkbox -- ref to the chapter-limit CheckButton widget
   local use_web_search_checkbox -- ref to the web search CheckButton widget
+  local use_book_search_checkbox -- ref to the book search CheckButton widget
   local function getNotebookButtonText()
     local notebooks = Notebook.list(self.assistant)
     if not notebooks or #notebooks == 0 then
@@ -630,7 +638,8 @@ function AssistantDialog:showAskDialog(highlightedText)
         self:_close()
         local request_title = user_question
         user_question = user_question .. book_text_prompt
-        self:_prepareMessageHistoryForUserQuery(message_history, highlightedText, user_question, use_web_search_checkbox.checked)
+        self:_prepareMessageHistoryForUserQuery(message_history, highlightedText, user_question,
+          use_web_search_checkbox.checked, use_book_search_checkbox and use_book_search_checkbox.checked)
         Trapper:wrap(function()
           local answer, err = self.querier:query(message_history, request_title)
 
@@ -687,7 +696,8 @@ function AssistantDialog:showAskDialog(highlightedText)
                       extractContextText(self.assistant, use_chapter))
                 end
                 user_question = user_question .. book_text_prompt
-                self:runPrompt(highlightedText, tab.idx, user_question)
+                self:runPrompt(highlightedText, tab.idx, user_question,
+                  use_book_search_checkbox and use_book_search_checkbox.checked)
               end
             end)
           end,
@@ -831,6 +841,24 @@ function AssistantDialog:showAskDialog(highlightedText)
   })
   checkbox_pos = checkbox_pos + 1
 
+  use_book_search_checkbox = CheckButton:new{
+    face = Font:getFace("xx_smallinfofont"),
+    text = _("Search Book"),
+    parent = self.input_dialog,
+    width = half_w,
+    checked = self.assistant.settings:readSetting("ask_use_booksearch", false),
+    enabled = self.assistant.ui and self.assistant.ui.document ~= nil,
+    callback = function()
+      self.assistant.settings:saveSetting("ask_use_booksearch", use_book_search_checkbox.checked)
+      self.assistant.updated = true
+    end,
+  }
+  table.insert(vgroup, checkbox_pos, HorizontalGroup:new{
+    HorizontalSpan:new{ width = left_gap },
+    use_book_search_checkbox,
+  })
+  checkbox_pos = checkbox_pos + 1
+
   -- Both checkboxes live under the `book.title` guard: the chapter option
   -- depends on the "Include Text Read So Far" checkbox, and `_getBookContext`
   -- falls back to "Unknown Title", so this guard is only bypassed when the
@@ -893,7 +921,7 @@ end
 
 -- Process main select popup buttons
 -- ( prompts from configuration )
-function AssistantDialog:runPrompt(highlightedText, prompt_id, user_input)
+function AssistantDialog:runPrompt(highlightedText, prompt_id, user_input, use_booksearch)
 
   local user_prompts = self.assistant.config:getFeature("prompts")
   local prompt_config = Prompts.getMergedPrompts(user_prompts)[prompt_id]
@@ -929,6 +957,7 @@ function AssistantDialog:runPrompt(highlightedText, prompt_id, user_input)
   -- set attributes in metatable (won't be encoded to API calls)
   ASUtils.set_attr(_user, "user_input", user_input)
   ASUtils.set_attr(_user, "use_websearch", koutil.tableGetValue(prompt_config, "use_websearch") or false)
+  ASUtils.set_attr(_user, "use_booksearch", use_booksearch or false)
   ASUtils.set_attr(_user, "show_suggestions", Prompts.isSuggestionsEnabled(self.assistant.settings, prompt_config))
   table.insert(message_history, _user)
   
