@@ -21,7 +21,7 @@ local Screen = Device.screen
 local Prompts = require("assistant_prompts").assistant_prompts
 
 local API_HANDLERS = {}
-local MAX_TOOL_ROUNDS = 3
+local MAX_TOOL_ROUNDS = 5
 
 -- default_value for rapidjson decoded object
 local function json_default(value, default_value)

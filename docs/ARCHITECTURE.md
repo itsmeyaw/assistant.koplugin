@@ -10,7 +10,7 @@ KOReader plugin adding AI assistant features: 10+ providers, OpenAI Responses AP
 
 - `main.lua` — plugin init, TouchMenu registration, dispatcher actions/gestures, translate-override + auto-recap hooks, dictionary-popup button. `Assistant:_showAddProviderDialog` / `_showAddWebSearchDialog` delegate to the registries.
 - `_meta.lua` — version (`X.Y-dev`), manually bumped on `main` after a release tag; CI rewrites it from the tag during packaging.
-- `assistant_querier.lua` (`Querier`) — loads handlers, drives stream/non-stream paths, runs the bounded tool loop (max 3 rounds feeding results back), and parses SSE into one unified format.
+- `assistant_querier.lua` (`Querier`) — loads handlers, drives stream/non-stream paths, runs the bounded tool loop (max 5 rounds feeding results back), and parses SSE into one unified format.
 - `assistant_tool_executor.lua` (`ToolExecutor`) — normalizes tool-calling across the `openai`/`anthropic`/`gemini`/`bedrock` wire formats; provides full-book search and loads enabled web-search tools from `SearchRegistry` at query time.
 - `assistant_exttools.lua` — search API clients (SerpAPI, Tavily, SearXNG, Exa, Brave Search).
 
