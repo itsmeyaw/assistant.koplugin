@@ -38,9 +38,6 @@ local T = require("ffi/util").template
 
 local Registry = {}
 
--- Current schema version for forward compatibility
-local SCHEMA_VERSION = 1
-
 -- Supported API handler names (must match api_handlers/ .lua files)
 Registry.HANDLERS = {
     openai    = true,
@@ -206,12 +203,6 @@ function Registry.load(settings)
         return { providers = {}, _next_id = 1 }
     end
 
-    if decoded.schema_version ~= SCHEMA_VERSION then
-        logger.warn("Registry: schema version mismatch (got ",
-            tostring(decoded.schema_version), ", expected ", SCHEMA_VERSION, "), starting fresh")
-        return { providers = {}, _next_id = 1 }
-    end
-
     if type(decoded.providers) ~= "table" then
         decoded.providers = {}
     end
@@ -228,7 +219,6 @@ end
 ---@return boolean ok
 function Registry.save(settings, data)
     local to_save = {
-        schema_version = SCHEMA_VERSION,
         providers = data.providers or {},
         _next_id = data._next_id or 1,
     }

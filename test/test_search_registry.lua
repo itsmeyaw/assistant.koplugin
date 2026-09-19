@@ -158,12 +158,12 @@ local tests = {
         assert.equal(next(data.tools), nil)
     end),
 
-    test("load returns fresh structure on schema version mismatch", function()
+    test("load accepts records without a recognized schema version", function()
         local settings = mockSettings()
         settings:saveSetting("ui_search_tools",
             '{"schema_version":999,"tools":{"serpapi":{"api_key":"x"}}}')
         local data = SearchRegistry.load(settings)
-        assert.equal(next(data.tools), nil)
+        assert.equal(data.tools.serpapi.api_key, "x")
     end),
 
     test("load gracefully ignores old records with display_name field", function()
