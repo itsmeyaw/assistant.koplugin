@@ -349,44 +349,6 @@ function ToolExecutor.appendToolResult(message_history, tool_call_result)
     return true, nil
 end
 
---- Extract keywords from tool call arguments (handles multiple formats).
----
---- Supports:
---- - Gemini: args is already a table
---- - OpenAI/Anthropic: arguments is a JSON string
----
---- @param tool_call       table   single tool call object
---- @return string|nil id, string|nil keywords, string|nil error
-function ToolExecutor.extractKeywords(tool_call)
-    if type(tool_call) ~= "table" then
-        return nil, nil, _("Tool call did not include id.")
-    end
-    local id = koutil.tableGetValue(tool_call, "tool_call_id") or koutil.tableGetValue(tool_call, "id")
-    if type(id) ~= "string" or id == "" then
-        return nil, nil, _("Tool call did not include id.")
-    end
-    local args = koutil.tableGetValue(tool_call, "args") or koutil.tableGetValue(tool_call, "input")
-    if args == nil then
-        local arguments = koutil.tableGetValue(tool_call, "arguments")
-        if type(arguments) == "string" then
-            local ok, decoded = pcall(json.decode, arguments)
-            args = ok and decoded or nil
-        end
-    end
-    if type(args) ~= "table" then
-        return nil, nil, _("Tool call did not include search keywords.")
-    end
-    local keywords = koutil.tableGetValue(args, "keywords") or koutil.tableGetValue(args, "query")
-    if type(keywords) == "table" and #keywords > 0 then
-        keywords = keywords[1]
-    end
-    if type(keywords) ~= "string" or #keywords == 0 then
-        return nil, nil, _("Tool call did not include search keywords.")
-    end
-
-    return id, keywords, nil
-end
-
 --- Extract an id, name, and decoded argument object from every supported wire format.
 function ToolExecutor.extractToolCall(tool_call)
     if type(tool_call) ~= "table" then

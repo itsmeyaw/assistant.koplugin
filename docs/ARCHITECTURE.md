@@ -51,7 +51,7 @@ KOReader plugin adding AI assistant features: 10+ providers, OpenAI Responses AP
 - `assistant_settings.lua` — provider/model settings.
 - `assistant_model_picker.lua` — `showPickerDialog`/`fetchModels`; call inside `Trapper:wrap`.
 - `assistant_viewer.lua` (`ChatGPTViewer`) — scrollable result viewer.
-- `assistant_quicknote.lua` — quick-note capture; `assistant_updater.lua` — GitHub release check; `assistant_mdparser.lua` — hoedown → markdown.lua fallback.
+- `assistant_quicknote.lua` — quick-note capture; `assistant_updater.lua` — GitHub release check; `assistant_mdparser.lua` — KOReader Markdown rendering with table support.
 
 ## Config
 
@@ -64,8 +64,8 @@ KOReader plugin adding AI assistant features: 10+ providers, OpenAI Responses AP
 - `assistant_prompts.lua` — prompt templates.
 - Helpers: prefer `koutil.tableGetValue`, `koutil.tableDeepCopy`/`tableSize`/`tableEquals` over manual table loops; `util.orderedPairs(t)` for deterministic key order. Error handling returns `nil, err` (or `false, err` for HTTP); callers check the first return value.
 - Formatting: bold runs via `assistant_utils.bold_format(T(_("<b>Header:</b> %1"), val))`; message metadata via `assistant_utils.set_attr`/`get_attr` for fields that must not serialize into API bodies (`use_websearch`, `is_context`, `search_keywords`).
-- **PLUGIN_DIR**: runtime constant `assistant_utils.PLUGIN_DIR` computed in `main.lua` from its own source path with `lfs` existence checks + `DataStorage`/install-dir fallbacks; used by gettext (`l10n`) and mdparser (`lib`). OTA target remains `DataStorage:getFullDataDir()/plugins` (writable).
-- **Dependencies**: none beyond KOReader's standard libraries; the optional `hoedown` native library has a pure-Lua fallback. License: GPL-3.0 (see `LICENSE`).
+- **PLUGIN_DIR**: runtime constant `assistant_utils.PLUGIN_DIR` computed in `main.lua` from its own source path with `lfs` existence checks + `DataStorage`/install-dir fallbacks; used by gettext (`l10n`). OTA target remains `DataStorage:getFullDataDir()/plugins` (writable).
+- **Dependencies**: none beyond KOReader's standard libraries. License: GPL-3.0 (see `LICENSE`).
 
 ## Key files
 

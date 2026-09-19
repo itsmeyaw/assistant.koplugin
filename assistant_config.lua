@@ -15,19 +15,6 @@ local FFIUtil = require("ffi/util")
 -- Static (module-level) helpers — no instance required
 ---------------------------------------------------------------------------
 
---- Validate a configuration file by loading and executing it.
---- Returns (true, nil) on success, (false, error_string) on failure.
---- @param filePath string Path to the Lua configuration file.
-function Config.testConfigFile(filePath)
-    local env = {}
-    setmetatable(env, {__index = _G})
-    local chunk, err = loadfile(filePath, "t", env)
-    if not chunk then return false, err end
-    local success, result = pcall(chunk)
-    if not success then return false, result end
-    return true, nil
-end
-
 --- Return the plugin directory path (e.g. "<data>/plugins/assistant.koplugin").
 --- Uses DataStorage directly to avoid depending on Assistant.name.
 function Config.getAssistantDir()
@@ -49,27 +36,9 @@ end
 --- Returns (rawConfig, loadError).
 ---   rawConfig  – the table returned by dofile(), or nil on failure.
 ---   loadError  – a string describing the error, or nil on success.
---- Mimics the former main.lua top-level load: test for syntax errors first,
---- then pcall(dofile) and collect any runtime error.
 function Config.loadRawConfig()
     local logger = require("logger")
     local configPath = Config.getConfigPath()
-
-    -- 1. Syntax / compile-time check
-    local ok, test_err = Config.testConfigFile(configPath)
-    if not ok then
-        -- 2. Still try to dofile so we get the runtime error too (original
-        --    behaviour: both testConfigFile error AND dofile error are captured).
-        local success, result = pcall(function() return dofile(configPath) end)
-        if success then
-            return result, test_err  -- loaded despite syntax warning
-        else
-            logger.warn(result)
-            return nil, test_err  -- prefer the syntax error message
-        end
-    end
-
-    -- 3. Normal load
     local success, result = pcall(function() return dofile(configPath) end)
     if success then
         return result, nil
@@ -129,11 +98,6 @@ end
 --- Returns the entire provider_settings table from CONFIGURATION.
 function Config:getProviderSettings()
     return koutil.tableGetValue(self._data, "provider_settings") or {}
-end
-
---- Returns the entire features table from CONFIGURATION.
-function Config:getFeatures()
-    return koutil.tableGetValue(self._data, "features") or {}
 end
 
 --- True when provider has model/base_url/api_key. Model may be
@@ -248,20 +212,6 @@ function Config:deleteProvider(id)
         self._assistant.updated = true
     end
     return true
-end
-
---- Thin wrapper: search tools share the provider_settings table under fixed
---- keys (serpapi, tavilyapi, …). Delegates to setProvider.
---- @param tool_key string Fixed search-tool key (e.g. "serpapi"), not an API key.
-function Config:setSearchTool(tool_key, record)
-    return self:setProvider(tool_key, record)
-end
-
---- Thin wrapper: search tools share the provider_settings table under fixed
---- keys (serpapi, tavilyapi, …). Delegates to deleteProvider.
---- @param tool_key string Fixed search-tool key (e.g. "serpapi"), not an API key.
-function Config:deleteSearchTool(tool_key)
-    return self:deleteProvider(tool_key)
 end
 
 --- Build the effective CONFIGURATION table from the raw dofile() result of

@@ -772,10 +772,17 @@ function ChatGPTViewer:askAnotherQuestion(simple_mode)
   -- Add search options below the input field
   local web_search_available = self.assistant.settings:readSetting("use_websearch", "none") ~= "none"
   local saved_web_search = self.assistant.settings:readSetting("ask_use_websearch", false)
+  local available_w = self.input_dialog:getAddedWidgetAvailableWidth()
+  local gap = Size.padding.large
+  local input_extra = 2 * (Size.border.inputtext + Size.padding.small + Size.margin.default)
+  local left_gap = math.floor((self.input_dialog.width - available_w - input_extra) / 2)
+  local half_w = math.floor((available_w - left_gap - gap * 2) / 2)
+  if half_w < 50 then half_w = math.floor((available_w - left_gap - gap) / 2) end
   use_web_search_checkbox = CheckButton:new{
     face = Font:getFace("xx_smallinfofont"),
     text = _("Use web search") .. " 🌐",
     parent = self.input_dialog,
+    width = half_w,
     checked = web_search_available and saved_web_search,
     enabled = web_search_available,
     callback = function()
@@ -787,6 +794,7 @@ function ChatGPTViewer:askAnotherQuestion(simple_mode)
     face = Font:getFace("xx_smallinfofont"),
     text = _("Search Book"),
     parent = self.input_dialog,
+    width = half_w,
     checked = self.assistant.settings:readSetting("ask_use_booksearch", false),
     enabled = self.assistant.ui and self.assistant.ui.document ~= nil,
     callback = function()
@@ -796,9 +804,9 @@ function ChatGPTViewer:askAnotherQuestion(simple_mode)
   }
   local vgroup = self.input_dialog.dialog_frame[1]
   table.insert(vgroup, 2, HorizontalGroup:new{
-    HorizontalSpan:new{ width = Size.padding.large },
+    HorizontalSpan:new{ width = left_gap },
     use_web_search_checkbox,
-    HorizontalSpan:new{ width = Size.padding.large },
+    HorizontalSpan:new{ width = gap },
     use_book_search_checkbox,
   })
 

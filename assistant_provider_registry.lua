@@ -38,9 +38,6 @@ local T = require("ffi/util").template
 
 local Registry = {}
 
--- Current schema version for forward compatibility
-local SCHEMA_VERSION = 1
-
 -- Supported API handler names (must match api_handlers/ .lua files)
 Registry.HANDLERS = {
     openai    = true,
@@ -48,18 +45,6 @@ Registry.HANDLERS = {
     gemini    = true,
     responses = true,
     bedrock   = true,
-}
-
--- Default base URLs for each handler (used as pre-fill hint in UI).
--- Gemini: the native API path format is /v1beta/models/{model}:generateContent
--- and models.list is /v1beta/models, so base_url must include the /models
--- segment (see configuration.sample.lua and api_handlers/gemini.lua).
-Registry.DEFAULT_BASE_URLS = {
-    openai    = "https://api.openai.com/v1",
-    responses = "https://api.openai.com/v1",
-    anthropic = "https://api.anthropic.com/v1",
-    gemini    = "https://generativelanguage.googleapis.com/v1beta/models",
-    bedrock   = "https://bedrock-runtime.us-east-1.amazonaws.com",
 }
 
 -- Per-handler guidance shown as the Base URL field description in the
@@ -206,12 +191,6 @@ function Registry.load(settings)
         return { providers = {}, _next_id = 1 }
     end
 
-    if decoded.schema_version ~= SCHEMA_VERSION then
-        logger.warn("Registry: schema version mismatch (got ",
-            tostring(decoded.schema_version), ", expected ", SCHEMA_VERSION, "), starting fresh")
-        return { providers = {}, _next_id = 1 }
-    end
-
     if type(decoded.providers) ~= "table" then
         decoded.providers = {}
     end
@@ -228,7 +207,6 @@ end
 ---@return boolean ok
 function Registry.save(settings, data)
     local to_save = {
-        schema_version = SCHEMA_VERSION,
         providers = data.providers or {},
         _next_id = data._next_id or 1,
     }
@@ -405,29 +383,6 @@ function Registry.delete(data, id)
     return true
 end
 
---- Edit an existing UI provider in place.  Only mutable fields are updated;
---- the handler, additional_parameters, and stable ID are preserved.
----@param data table The full UI data structure (from load())
----@param id string The provider's stable ID
----@param fields table { display_name, base_url, api_key, model }
----@return boolean ok
----@return string|nil err
-function Registry.edit(data, id)
-    local existing = data.providers[id]
-    if not existing then
-        return false, _("Provider not found.")
-    end
-    return true
-end
-
---- Convenience: check whether a merged provider record is editable (or deletable).
---- Same condition: source="ui" and not immutable.
----@param provider table A merged provider_settings entry
----@return boolean
-function Registry.is_editable(provider)
-    return Registry.is_deletable(provider)
-end
-
 --- Convenience: check whether a merged provider record is deletable.
 ---@param provider table A merged provider_settings entry
 ---@return boolean
@@ -555,6 +510,9 @@ function Registry.installProvider(assistant, handler, base_url, display_name, ap
         source = "ui",
     }
     assistant.config:setProvider(id, newRecord)
+
+    -- configuration.lua is optional when providers are managed in the UI.
+    assistant.config:clearLoadError()
 
     -- setProvider already loaded the new provider into the querier, so persist
     -- the selection too: getActiveProviderId reads this key, and without it the

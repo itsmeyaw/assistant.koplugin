@@ -40,9 +40,6 @@ function serpapi:SearchKeywords(keywords, trap_widget)
 
     local parsed, err = ASUtils.fetchJSON(url, nil, trap_widget, 45, 120)
     if not parsed then
-        if err == ASUtils.HANDLERCODE.CODE_CANCELLED then
-            return false, ASUtils.HANDLERCODE.CODE_CANCELLED
-        end
         return false, err
     end
 
@@ -74,9 +71,6 @@ function serpapi:AccoutInfo()
     local url      = T("%1?api_key=%2", acc_url, key)
     local parsed, err = ASUtils.fetchJSON(url, nil, "loading...", 30, 60)
     if not parsed then
-        if err == ASUtils.HANDLERCODE.CODE_CANCELLED then
-            return false, ASUtils.HANDLERCODE.CODE_CANCELLED
-        end
         return false, err
     end
     local ret = T("SerpAPI\n\n%1/%2\nUsed: %3\nLeft: %4",
@@ -106,9 +100,6 @@ function tavily:SearchKeywords(keywords, trap_widget)
 
     local parsed, err = ASUtils.fetchJSON(search_url, nil, trap_widget, 45, 120, requestBody)
     if not parsed then
-        if err == ASUtils.HANDLERCODE.CODE_CANCELLED then
-            return false, ASUtils.HANDLERCODE.CODE_CANCELLED
-        end
         return false, err
     end
     if not parsed.results then
@@ -139,9 +130,6 @@ function tavily:AccoutInfo()
     local reqHeaders = { ["Authorization"]="Bearer " .. self.api_key }
     local parsed, err = ASUtils.fetchJSON(acc_url, reqHeaders, "loading...", 30, 60)
     if not parsed then
-        if err == ASUtils.HANDLERCODE.CODE_CANCELLED then
-            return false, ASUtils.HANDLERCODE.CODE_CANCELLED
-        end
         return false, err
     end
     local ret = T("Tavily API\n\nPlan: %1\nUsed: %2\nLimits: %3",
@@ -162,9 +150,6 @@ function searxng:SearchKeywords(keywords, trap_widget)
 
     local parsed, err = ASUtils.fetchJSON(url, nil, trap_widget, 45, 120)
     if not parsed then
-        if err == ASUtils.HANDLERCODE.CODE_CANCELLED then
-            return false, ASUtils.HANDLERCODE.CODE_CANCELLED
-        end
         return false, err
     end
     if not parsed.results then
@@ -208,9 +193,6 @@ function exaai:SearchKeywords(keywords, trap_widget)
 
     local parsed, err = ASUtils.fetchJSON(search_url, reqHeaders, trap_widget, 45, 120, requestBody)
     if not parsed then
-        if err == ASUtils.HANDLERCODE.CODE_CANCELLED then
-            return false, ASUtils.HANDLERCODE.CODE_CANCELLED
-        end
         return false, err
     end
     if not parsed.results then
@@ -268,9 +250,6 @@ function bravesearch:SearchKeywords(keywords, trap_widget)
     local headers = { ["X-Subscription-Token"] = self.api_key }
     local parsed, err = ASUtils.fetchJSON(url, headers, trap_widget, 45, 120)
     if not parsed then
-        if err == ASUtils.HANDLERCODE.CODE_CANCELLED then
-            return false, ASUtils.HANDLERCODE.CODE_CANCELLED
-        end
         return false, err
     end
 

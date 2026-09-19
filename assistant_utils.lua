@@ -1053,7 +1053,6 @@ BaseHandler.CODE_TIMEOUT            = "REQUEST_TIMEOUT"
 BaseHandler.CODE_UNSUPPORTED_PROTO  = "UNSUPPORTED_PROTOCOL"
 BaseHandler.CODE_INCOMPLETE         = "INCOMPLETE_CONTENT"
 BaseHandler.CODE_DECOMPRESS_ERROR   = "DECOMPRESS_ERROR"
-BaseHandler.CODE_SERVER_ERROR       = "SERVER_ERROR"
 M.HANDLERCODE = BaseHandler
 
 -- httpRequest with gzip compress support, GET/POST method only
@@ -1209,7 +1208,7 @@ function M.fetchJSON(url, header, string_or_widget, timeout, maxtime, post_body)
   end
 
   if not success then
-    return nil, BaseHandler.CODE_NETWORK_ERROR
+    return nil, (type(body) == "string" and body ~= "" and body) or code or BaseHandler.CODE_NETWORK_ERROR
   end
 
   if code ~= 200 then

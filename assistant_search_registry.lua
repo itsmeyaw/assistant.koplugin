@@ -22,9 +22,6 @@ local _ = require("assistant_gettext")
 
 local SearchRegistry = {}
 
--- Current schema version for forward compatibility
-local SCHEMA_VERSION = 1
-
 --- Fixed search tool definitions.
 --- `needs` indicates the required credential field for each tool.
 SearchRegistry.SEARCH_TOOLS = {
@@ -59,12 +56,6 @@ function SearchRegistry.load(settings)
         return { tools = {} }
     end
 
-    if decoded.schema_version ~= SCHEMA_VERSION then
-        logger.warn("SearchRegistry: schema version mismatch (got ",
-            tostring(decoded.schema_version), ", expected ", SCHEMA_VERSION, "), starting fresh")
-        return { tools = {} }
-    end
-
     if type(decoded.tools) ~= "table" then
         decoded.tools = {}
     end
@@ -78,7 +69,6 @@ end
 ---@return boolean ok
 function SearchRegistry.save(settings, data)
     local to_save = {
-        schema_version = SCHEMA_VERSION,
         tools = data.tools or {},
     }
 
@@ -260,7 +250,7 @@ function SearchRegistry.installSearchTool(assistant, tool_key, api_key, base_url
         base_url = record.base_url,
         source = "ui",
     }
-    assistant.config:setSearchTool(tool_key, rec)
+    assistant.config:setProvider(tool_key, rec)
 
     return true
 end
@@ -281,7 +271,7 @@ function SearchRegistry.deleteSearchTool(assistant, tool_key)
     end
 
     SearchRegistry.save(assistant.settings, assistant._ui_search_data)
-    assistant.config:deleteSearchTool(tool_key)
+    assistant.config:deleteProvider(tool_key)
 
     return true
 end

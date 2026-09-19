@@ -1,6 +1,5 @@
 local helper = require("test.helper")
 local assert = helper.assert
-local json = require("rapidjson")
 local strbuf = require("string.buffer")
 local Bedrock = require("api_handlers.bedrock")
 local ToolExecutor = require("assistant_tool_executor")
@@ -66,34 +65,6 @@ local tests = {
             toolUseId = "b", name = "assistant_web_search", input = { keywords = "b" } } } } } } }, "bedrock")
         assert.isTrue(calls.__is_tool_call)
         assert.equal(2, #calls.tool_calls)
-    end },
-    { name = "handles malformed tool inputs without crashing", fn = function()
-        local calls = handler():parseToolCalls({ output = { message = { content = { { toolUse = {
-            toolUseId = "bad", name = "assistant_web_search", input = "not-json" } } } } } }, "bedrock")
-        local id, keywords, err = ToolExecutor.extractKeywords(calls.tool_calls[1])
-        assert.equal(nil, id)
-        assert.equal(nil, keywords)
-        assert.matches(err, "search keywords")
-    end },
-    { name = "extracts only string keywords from safe tool shapes", fn = function()
-        local invalid = { json.null, false, { id = "a", args = json.null }, { id = "b", args = "scalar" },
-            { id = "c", input = true }, { id = "d", input = { keywords = 4 } }, { id = "e", input = { keywords = {} } },
-            { id = "f", args = { keywords = { true } } } }
-        for index, tool_call in ipairs(invalid) do
-            local id, keywords, err = ToolExecutor.extractKeywords(tool_call)
-            assert.equal(nil, id)
-            assert.equal(nil, keywords)
-            assert.matches(err, "Tool call")
-        end
-        local gemini_id, gemini_keywords = ToolExecutor.extractKeywords({ id = "g", args = { keywords = { "gemini" } } })
-        local anthropic_id, anthropic_keywords = ToolExecutor.extractKeywords({ id = "a", input = { keywords = "anthropic" } })
-        local bedrock_id, bedrock_keywords = ToolExecutor.extractKeywords({ tool_call_id = "b", input = { keywords = "bedrock" } })
-        assert.equal("g", gemini_id)
-        assert.equal("gemini", gemini_keywords)
-        assert.equal("a", anthropic_id)
-        assert.equal("anthropic", anthropic_keywords)
-        assert.equal("b", bedrock_id)
-        assert.equal("bedrock", bedrock_keywords)
     end },
     { name = "builds Bedrock tools and result messages", fn = function()
         local tool = ToolExecutor.buildExternalSearchToolDef("bedrock")

@@ -39,7 +39,19 @@ I have a question about this book.]], book_title, book_author)
   return content
 end
 
+-- Inline copy of the user-message display guard in
+-- AssistantDialog:_createResultText; the dialog itself requires live widgets.
+local function displayable_user_content(message)
+    if type(message.content) ~= "string" then return nil end
+    return message.content
+end
+
 local tests = {
+
+    test("result formatting ignores wire-format user tool results", function()
+        assert.equal(displayable_user_content({ content = "question" }), "question")
+        assert.equal(displayable_user_content({ content = { { toolResult = {} } } }), nil)
+    end),
 
     -- =========================================================================
     -- 1. Built-in flag defaults

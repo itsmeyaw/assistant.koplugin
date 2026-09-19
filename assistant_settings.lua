@@ -242,7 +242,7 @@ function SettingsDialog:init()
                 local cur = self.assistant.querier.provider_name
                 if not cur then return false end
                 local ps = self.assistant.config:getProvider(cur)
-                return Registry.is_editable(ps)
+                return Registry.is_deletable(ps)
             end,
             callback = function() self:onEditProvider() end,
         },
@@ -428,7 +428,7 @@ end
 function SettingsDialog:onEditProvider()
     local provider_name = self.assistant.querier.provider_name
     local ps = self.assistant.config:getProvider(provider_name)
-    if not Registry.is_editable(ps) then return end
+    if not Registry.is_deletable(ps) then return end
 
     UIManager:close(self)
     UIManager:nextTick(function()

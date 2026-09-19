@@ -80,6 +80,9 @@ local function mockAssistantForInstall()
         assistant.updated = true
         return true
     end
+    function config:clearLoadError()
+        config.load_error = nil
+    end
     function config:deleteProvider(id)
         if not id or id == "" then return nil, "invalid id" end
         if config_data and config_data.provider_settings then
@@ -92,8 +95,6 @@ local function mockAssistantForInstall()
         end
         return true
     end
-    config.setSearchTool = config.setProvider
-    config.deleteSearchTool = config.deleteProvider
     -- Expose the raw data table for direct assertions in tests.
     config._data = config_data
     assistant.config = config
@@ -165,10 +166,8 @@ local tests = {
         end
     end),
 
-    test("Bedrock is a supported handler with its regional runtime default URL", function()
+    test("Bedrock is a supported handler", function()
         assert.isTrue(Registry.HANDLERS.bedrock)
-        assert.equal(Registry.DEFAULT_BASE_URLS.bedrock,
-            "https://bedrock-runtime.us-east-1.amazonaws.com")
     end),
 
     test("presets carry provider-specific additional_parameters defaults", function()
@@ -237,7 +236,7 @@ local tests = {
         for i, preset in ipairs(Registry.PRESET_PROVIDERS) do
             if preset.name == "OpenAI - Responses" then
                 assert.equal(preset.handler, "responses")
-                assert.equal(preset.base_url, Registry.DEFAULT_BASE_URLS.responses)
+                assert.equal(preset.base_url, "https://api.openai.com/v1")
                 return
             end
         end
@@ -248,7 +247,7 @@ local tests = {
         for i, preset in ipairs(Registry.PRESET_PROVIDERS) do
             if preset.name == "Amazon Bedrock" then
                 assert.equal(preset.handler, "bedrock")
-                assert.equal(preset.base_url, Registry.DEFAULT_BASE_URLS.bedrock)
+                assert.equal(preset.base_url, "https://bedrock-runtime.us-east-1.amazonaws.com")
                 assert.equal(preset.additional_parameters, nil)
                 return
             end
@@ -392,6 +391,15 @@ local tests = {
         assert.equal(assistant.settings:readSetting("provider"), id)
     end),
 
+    test("installProvider clears an optional configuration file error", function()
+        local assistant = mockAssistantForInstall()
+        assistant.config.load_error = "configuration.lua: No such file or directory"
+        local id, err = Registry.installProvider(assistant, "openai",
+            "https://api.test.com/v1", "AMD", "key", "gpt-4o")
+        assert.notNil(id, err)
+        assert.equal(assistant.config.load_error, nil)
+    end),
+
     test("installProvider does not share preset additional_parameters tables", function()
         local assistant = mockAssistantForInstall()
         local preset
@@ -413,45 +421,6 @@ local tests = {
     end),
 
     -- =========================================================================
-    -- Edit / is_editable
-    -- =========================================================================
-
-    test("is_editable returns same result as is_deletable", function()
-        -- UI provider: editable
-        assert.isTrue(Registry.is_editable({ source = "ui" }))
-        assert.isTrue(Registry.is_deletable({ source = "ui" }))
-        -- File provider: not editable
-        assert.equal(Registry.is_editable({ source = "file", immutable = true }), false)
-        assert.equal(Registry.is_deletable({ source = "file", immutable = true }), false)
-        -- UI + immutable: not editable
-        assert.equal(Registry.is_editable({ source = "ui", immutable = true }), false)
-        assert.equal(Registry.is_deletable({ source = "ui", immutable = true }), false)
-        -- nil: not editable
-        assert.equal(Registry.is_editable(nil), nil)
-        assert.equal(Registry.is_deletable(nil), nil)
-    end),
-
-    test("Registry.edit returns false for non-existent provider", function()
-        local data = { providers = {}, _next_id = 1 }
-        local ok, err = Registry.edit(data, "custom:999", {})
-        assert.isFalse(ok)
-        assert.notNil(err)
-    end),
-
-    test("Registry.edit returns true for existing provider", function()
-        local data = { providers = {}, _next_id = 1 }
-        local id = Registry.add(data, {
-            display_name = "Test",
-            handler = "openai",
-            model = "auto",
-            base_url = "https://api.test.com/v1",
-            api_key = "key",
-        })
-        assert.notNil(id)
-        local ok, err = Registry.edit(data, id, {})
-        assert.isTrue(ok)
-    end),
-
     test("updateProvider updates fields without generating new ID", function()
         local assistant = mockAssistantForInstall()
         -- First install a provider
