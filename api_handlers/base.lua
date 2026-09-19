@@ -525,16 +525,6 @@ end
 --- The returned function is passed to Querier:processStream via runInSubProcess.
 function BaseHandler:backgroundRequest(url, headers, body)
 
-    local function wrap_fd(fd)
-        local fo = {}
-        function fo:write(chunk)
-            ffiutil.writeToFD(fd, chunk)
-            return self
-        end
-        function fo:close() return true end -- mock close method
-        return fo
-    end
-
     return function(pid, child_write_fd)
         if not pid or not child_write_fd then
             logger.warn("Invalid parameters for background request")
@@ -554,7 +544,7 @@ function BaseHandler:backgroundRequest(url, headers, body)
                 if #raw_body < MAX_ERR_BODY then
                     raw_body:put(chunk:sub(1, MAX_ERR_BODY - #raw_body))
                 end
-                wrap_fd(child_write_fd):write(chunk)
+                ffiutil.writeToFD(child_write_fd, chunk)
             end
             return true
         end
