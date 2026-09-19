@@ -34,7 +34,6 @@ BaseHandler.CODE_TIMEOUT            = "REQUEST_TIMEOUT"
 BaseHandler.CODE_UNSUPPORTED_PROTO  = "UNSUPPORTED_PROTOCOL"
 BaseHandler.CODE_INCOMPLETE         = "INCOMPLETE_CONTENT"
 BaseHandler.CODE_DECOMPRESS_ERROR   = "DECOMPRESS_ERROR"
-BaseHandler.CODE_SERVER_ERROR       = "SERVER_ERROR"
 BaseHandler.PROTOCOL_NON_200 = "X-NON-200-STATUS:"
 BaseHandler.MAX_RETRIES = 8
 
@@ -372,9 +371,6 @@ function BaseHandler:SyncOptions(querier)
     end
 end
 
-function BaseHandler:FetchModels()
-end
-
 --- Normalize base_url to a true base URL by stripping known API path suffixes.
 --- Handles backward compatibility with old configs that included the full API path
 --- (e.g. /chat/completions, /messages, /responses).
@@ -652,10 +648,6 @@ function BaseHandler:parseToolCalls(responseData, format)
     end
 
     return nil, "parseToolCalls: unexpected response (no content, no tool call)"
-end
-
-function BaseHandler:buildExternalSearchToolDef(format)
-    return ToolExecutor.buildExternalSearchToolDef(format)
 end
 
 return BaseHandler
