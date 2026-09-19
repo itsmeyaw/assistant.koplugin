@@ -26,7 +26,7 @@ The suite runs inside KOReader's LuaJIT runtime via `setupkoenv` with UI modules
 
 - Create `test/test_<module>.lua` following `test/test_exttools.lua`; auto-discovered, no registration.
 - Keep files independent — they run alphabetically in one shared process.
-- Policy: when adding logic, write a test. If the function is exported, `require` it; if it is local, inline a copy in the test file and test that snippet.
+- Policy: when adding logic, write a test through an observable module interface. Extract a real pure module seam when the behavior cannot otherwise be tested.
 - `test/` is excluded from release zips/OTA packages — source only, never shipped.
 
 ## Stub discipline

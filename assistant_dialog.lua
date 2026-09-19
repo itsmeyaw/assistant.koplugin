@@ -353,7 +353,6 @@ function AssistantDialog:_showResultViewer(highlightedText, message_history, tit
           request_title = user_question
         end
 
-        viewer:trimMessageHistory()
         ASUtils.runWhenOnlineFast(function()
           Trapper:wrap(function()
             local answer, err = self.querier:query(message_history, request_title)

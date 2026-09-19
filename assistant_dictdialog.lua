@@ -5,7 +5,6 @@ local UIManager = require("ui/uimanager")
 local InfoMessage = require("ui/widget/infomessage")
 local _ = require("assistant_gettext")
 local T = require("ffi/util").template
-local Event = require("ui/event")
 local koutil = require("util")
 local ASUtils = require("assistant_utils")
 local TermXray = require("assistant_term_xray")
@@ -277,32 +276,11 @@ local function showDictionaryDialog(assistant, highlightedText, message_history,
 
     local result = createResultText(highlightedText, ret)
     local chatgpt_viewer
-
-    local function handleAddToNote()
-        if ui.highlight and ui.highlight.saveHighlight then
-            local success, index = pcall(function()
-                return ui.highlight:saveHighlight(true)
-            end)
-            if success and index then
-                local a = ui.annotation.annotations[index]
-                a.note = result
-                ui:handleEvent(Event:new("AnnotationsModified",
-                                    { a, nb_highlights_added = -1, nb_notes_added = 1 }))
-            end
-        end
-
-        UIManager:close(chatgpt_viewer)
-        if ui.highlight and ui.highlight.onClose then
-            ui.highlight:onClose()
-        end
-    end
-
     chatgpt_viewer = ChatGPTViewer:new {
         assistant = assistant,
         ui = ui,
         title = title,
         text = result,
-        onAddToNote = handleAddToNote,
         default_hold_callback = function ()
             chatgpt_viewer:HoldClose()
         end,

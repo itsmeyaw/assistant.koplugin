@@ -2,8 +2,6 @@ local util = require("util")
 local logger = require("logger")
 local UIManager = require("ui/uimanager")
 local InfoMessage = require("ui/widget/infomessage")
-local ffi = require("ffi")
-local ffiutil = require("ffi/util")
 local strbuf = require("string.buffer")
 local T = require("ffi/util").template
 local koutil = require("util")
@@ -18,71 +16,6 @@ local Trapper = require("ui/trapper")
 local M = {}
 local shared_buf = strbuf.new()
 
--- Standalone plugin-dir resolver. assistant_gettext must NOT require this
--- module (it resolves its own l10n dir from its own source location), so the
--- dependency stays one-way: utils -> gettext.
-local lfs_plugin_dir = require("libs/libkoreader-lfs")
-
--- PLUGIN_DIR is lazily delegated to assistant_gettext.plugin_dir (the single
--- source of truth). Tests / direct requires without gettext fall back to the
--- self-computation below.
-local _cached_dir
-
--- Compute the plugin dir (fallback used only when main.lua has not yet set
--- M.PLUGIN_DIR, e.g. in the test suite or a direct require).
-local function computePluginDir()
-  local function fromSelf()
-    local info = debug.getinfo(2, "S")
-    local src = info and info.source and info.source:match("^@(.+)$") or ""
-    local dir = src:match("(.*/)") or ""
-    dir = dir:gsub("/$", "")
-    if dir ~= "" and lfs_plugin_dir.attributes(dir, "mode") == "directory" then return dir end
-    info = debug.getinfo(1, "S")
-    src = info and info.source and info.source:match("^@(.+)$") or ""
-    dir = src:match("(.*/)") or ""
-    dir = dir:gsub("/$", "")
-    if dir ~= "" and lfs_plugin_dir.attributes(dir, "mode") == "directory" then return dir end
-    return nil
-  end
-  local d = fromSelf()
-  if d then
-    if lfs_plugin_dir.attributes(d .. "/l10n", "mode") == "directory" or lfs_plugin_dir.attributes(d .. "/lib", "mode") == "directory" then return d end
-    return d
-  end
-  local ok, DataStorage = pcall(require, "datastorage")
-  if ok and DataStorage then
-    local p = DataStorage:getDataDir() .. "/plugins/assistant.koplugin"
-    if lfs_plugin_dir.attributes(p, "mode") == "directory" then return p end
-    return p
-  end
-    if lfs_plugin_dir.attributes("plugins/assistant.koplugin", "mode") == "directory" then return "plugins/assistant.koplugin" end
-  return "."
-end
-
--- Backward-compatible accessor: prefer assistant_gettext.plugin_dir (single
--- source), then the cached self-computation for tests without gettext.
-function M.getPluginDir()
-  if M.PLUGIN_DIR and M.PLUGIN_DIR ~= "" then return M.PLUGIN_DIR end
-  if _cached_dir then return _cached_dir end
-  -- Try gettext first (single source of truth).
-  local ok, gt = pcall(require, "assistant_gettext")
-  if ok and gt and gt.plugin_dir and gt.plugin_dir ~= "" then
-    _cached_dir = gt.plugin_dir
-    return _cached_dir
-  end
-  -- Fallback: self-compute (tests / standalone luajit without gettext).
-  _cached_dir = computePluginDir()
-  return _cached_dir
-end
-
--- Initialize PLUGIN_DIR at file load so tests without main still have it.
--- getPluginDir() now delegates to assistant_gettext.plugin_dir when available.
-if not M.PLUGIN_DIR then
-  M.PLUGIN_DIR = M.getPluginDir()
-end
-
--- gettext require placed after PLUGIN_DIR is set so any consumer that reads
--- utils.PLUGIN_DIR during gettext's load sees a usable value.
 local _ = require("assistant_gettext")
 
 function M.extractBookTextForAnalysis(assistant, pages_ahead)
@@ -257,41 +190,12 @@ local function pageTextToString(t)
   return ""
 end
 
--- Byte length implied by a UTF-8 lead byte; 0 marks a continuation byte (or an
--- invalid lead byte). Used to keep truncation on character boundaries.
-local function utf8_char_len(byte)
-  if byte < 0x80 then return 1 end
-  if byte < 0xC0 then return 0 end
-  if byte < 0xE0 then return 2 end
-  if byte < 0xF0 then return 3 end
-  if byte < 0xF8 then return 4 end
-  return 0
-end
-
 function M.truncateToTailUtf8Safe(text, max_len)
-  if #text <= max_len then return text end
-  -- A byte slice would start mid-character: advance over the leading
-  -- continuation bytes (at most 3) to the next character boundary.
-  local start = #text - max_len + 1
-  while start <= #text and utf8_char_len(text:byte(start)) == 0 do
-    start = start + 1
-  end
-  return text:sub(start)
+  return #text <= max_len and text or util.fixUtf8(text:sub(-max_len), "")
 end
 
 function M.truncateToHeadUtf8Safe(text, max_len)
-  if #text <= max_len then return text end
-  -- A byte slice would end mid-character: walk back (at most 3 bytes) to the
-  -- last character boundary that fits within max_len.
-  local i = max_len
-  while i >= 1 do
-    local len = utf8_char_len(text:byte(i))
-    if len == 1 or (len > 1 and i + len - 1 <= max_len) then
-      return text:sub(1, i + len - 1)
-    end
-    i = i - 1
-  end
-  return ""
+  return #text <= max_len and text or util.fixUtf8(text:sub(1, max_len), "")
 end
 
 -- Marks a word selection can pick up at its edges but that are not part of the
@@ -804,24 +708,15 @@ end
 --- @param value any The attribute value (can be any Lua type)
 --- @throws Error if obj is not a table
 function M.set_attr(obj, key, value)
-    -- Validate that we're working with a table
     if type(obj) ~= "table" then
         error("obj must be a table")
     end
-    
-    -- Get or create the metatable
     local mt = getmetatable(obj)
     if not mt then
         mt = {}
         setmetatable(obj, mt)
     end
-    
-    -- Get or create the __attr sub-table within the metatable
-    if not mt.__attr then
-        mt.__attr = {}
-    end
-    
-    -- Store the key-value pair in the __attr table
+    mt.__attr = mt.__attr or {}
     mt.__attr[key] = value
 end
 
@@ -834,22 +729,16 @@ end
 --- @param default any Optional default value to return if attribute doesn't exist
 --- @return any The attribute value, or the default value if provided, or nil
 function M.get_attr(obj, key, default)
-    -- Safety check: ensure we're working with a table
     if type(obj) ~= "table" then
         return default
     end
-    
-    -- Attempt to retrieve the metatable and __attr field
     local mt = getmetatable(obj)
     if mt and mt.__attr then
         local value = mt.__attr[key]
-        -- Explicitly check for nil to distinguish between nil and false
         if value ~= nil then
             return value
         end
     end
-    
-    -- Return default if attribute doesn't exist or is nil
     return default
 end
 
@@ -936,88 +825,10 @@ function M.bold_format(text)
         return text
     end
 
-    local out = strbuf.new()
-    out:put(PTF_HEADER)
-    local in_bold = false
-    local pos = 1
-    local len = #text
-
-    while pos <= len do
-        if not in_bold then
-            local b_start, b_end = text:find("<b>", pos, true)
-            if b_start then
-                if b_start > pos then
-                    out:put(text:sub(pos, b_start - 1))
-                end
-                out:put(PTF_BOLD_START)
-                in_bold = true
-                pos = b_end + 1
-            else
-                out:put(text:sub(pos))
-                break
-            end
-        else
-            local e_start, e_end = text:find("</b>", pos, true)
-            if e_start then
-                if e_start > pos then
-                    out:put(text:sub(pos, e_start - 1))
-                end
-                out:put(PTF_BOLD_END)
-                in_bold = false
-                pos = e_end + 1
-            else
-                out:put(text:sub(pos))
-                break
-            end
-        end
-    end
-
-    if in_bold then
-        out:put(PTF_BOLD_END)
-    end
-
-    return out:get()
-end
-
-require("ffi/zlib_h")
-local libz = ffi.loadlib("z", 1)
-local ZLIB_HEADER = "\x78\x9c"
-local scratch = strbuf.new()
--- Enhanced uncompress that natively tolerates the Gzip-to-Zlib trailer mismatch
-local function zlib_uncompress_gzip(gzip_data, max_datalen)
-    local total_len = #gzip_data
-    if total_len < 18 then return nil, "Data truncated" end
-
-    local deflate_len = total_len - 18
-    local src_ptr = ffi.cast("const uint8_t*", gzip_data)
-
-    -- reused buffer
-    scratch:reset()
-    -- 1. Prepend a valid standard Zlib header (0x78 0x9C)
-    scratch:put(ZLIB_HEADER)
-    -- 2. Strip the 10-byte Gzip header
-    scratch:putcdata(src_ptr + 10, deflate_len)
-    local payload_ptr, payload_len = scratch:ref()
-
-    -- 3. Prepare the memory buffers
-    local buf = ffi.new("uint8_t[?]", max_datalen)
-    local buflen = ffi.new("unsigned long[1]", max_datalen)
-
-    -- 4. Invoke the low-level libz
-    local res = libz.uncompress(buf, buflen,
-        ffi.cast("const unsigned char*", payload_ptr), payload_len)
-
-    -- res == 0 means perfect zlib format
-    -- res == -3 (Z_DATA_ERROR) happens here because the tail has a Gzip CRC32 instead of Zlib Adler32.
-    -- But since the Deflate payload itself is 100% correct, the bytes in 'buf' are ALREADY completely deflated!
-    if res == 0 or res == -3 then
-        local actual_len = buflen[0]
-        if actual_len > 0 then
-            return ffi.string(buf, actual_len)
-        end
-    end
-    
-    return nil, "Zlib core uncompress failed with severe code: " .. tostring(res)
+    local formatted, starts = text:gsub("<b>", PTF_BOLD_START)
+    local ends
+    formatted, ends = formatted:gsub("</b>", PTF_BOLD_END)
+    return PTF_HEADER .. formatted .. (starts > ends and PTF_BOLD_END or "")
 end
 
 --- GET HTTP HEADER VALUE
@@ -1037,14 +848,6 @@ local function http_get_header(headers, header_name)
 end
 
 --- 
---- Checks content-encoding
-local function http_is_encoded(headers, encoding)
-    local value = http_get_header(headers, "content-encoding")
-    if not value then return false end
-    return value:lower():find((encoding or "gzip"):lower()) ~= nil
-end
-
---- 
 --- these codes are first defined in api_handlers/base.lua
 local BaseHandler = {}
 BaseHandler.CODE_CANCELLED          = "USER_CANCELED"
@@ -1052,10 +855,10 @@ BaseHandler.CODE_NETWORK_ERROR      = "NETWORK_ERROR"
 BaseHandler.CODE_TIMEOUT            = "REQUEST_TIMEOUT"
 BaseHandler.CODE_UNSUPPORTED_PROTO  = "UNSUPPORTED_PROTOCOL"
 BaseHandler.CODE_INCOMPLETE         = "INCOMPLETE_CONTENT"
-BaseHandler.CODE_DECOMPRESS_ERROR   = "DECOMPRESS_ERROR"
+BaseHandler.CODE_UNSUPPORTED_ENCODING = "UNSUPPORTED_ENCODING"
 M.HANDLERCODE = BaseHandler
 
--- httpRequest with gzip compress support, GET/POST method only
+-- httpRequest, GET/POST only
 function M.httpRequest(url, timeout, maxtime, post_body, post_content_type, headers)
     local parsed = socket_url.parse(url)
     if not parsed then
@@ -1073,7 +876,7 @@ function M.httpRequest(url, timeout, maxtime, post_body, post_content_type, head
     if not headers then
         headers = {}
     end
-    headers["Accept-Encoding"] = "gzip"
+    headers["Accept-Encoding"] = "identity"
 
     local sink = {}
     local request = {
@@ -1109,20 +912,17 @@ function M.httpRequest(url, timeout, maxtime, post_body, post_content_type, head
         return false, code, content or "Remote server error or unavailable"
     end
 
+    local encoding = http_get_header(resp_headers, "content-encoding")
+    if encoding and encoding:lower() ~= "identity" then
+        return false, BaseHandler.CODE_UNSUPPORTED_ENCODING,
+            "Server ignored requested identity content encoding"
+    end
+
     local http_len = http_get_header(resp_headers, "content-length")
     if http_len then
         if #content ~= tonumber(http_len) then
             return false, BaseHandler.CODE_INCOMPLETE, "Incomplete content received"
         end
-    end
-
-    if http_is_encoded(resp_headers, "gzip") then
-        local decompressed, err = zlib_uncompress_gzip(content, 8*1024*1024)
-        if not decompressed then
-            logger.warn("Failed to decompress data:", err)
-            return false, BaseHandler.CODE_DECOMPRESS_ERROR, "Failed to decompress data: " .. tostring(err)
-        end
-        content = decompressed
     end
 
     return true, code, content, resp_headers

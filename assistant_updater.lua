@@ -93,48 +93,20 @@ local function is_excluded(path)
     return is_excluded_with(path, nil)
 end
 
--- A more robust version comparison function compliant with Semantic Versioning.
--- Returns true if v1_str is newer than v2_str, false otherwise.
--- Handles versions like "1.8", "1.8.0-rc.1", "1.8.0-rc.11", "1.8.0".
 local function isVersionNewer(v1_str, v2_str)
     if not v1_str or not v2_str then return false end
 
-    -- Helper to parse a version string into its main and pre-release parts
-    -- according to SemVer rules.
     local function parseVersion(v_str)
         local parts = {}
-        local pre_release_parts = {}
-        local main_part = v_str
-
-        -- Separate pre-release tag (e.g., -alpha.1)
-        local pre_release_start = v_str:find("-")
-        if pre_release_start then
-            main_part = v_str:sub(1, pre_release_start - 1)
-            local pre_release_str = v_str:sub(pre_release_start + 1)
-            -- Split pre-release by '.' and convert numeric parts to numbers
-            for part in pre_release_str:gmatch("([^.]+)") do
-                local num = tonumber(part)
-                -- A valid numeric identifier in SemVer is just digits.
-                if num and part:match("^[0-9]+$") then
-                    table.insert(pre_release_parts, num)
-                else
-                    table.insert(pre_release_parts, part)
-                end
-            end
-        end
-
-        -- Split main part (e.g., 1.8.0) into numbers
-        for part in main_part:gmatch("%d+") do
+        for part in tostring(v_str):gmatch("%d+") do
             table.insert(parts, tonumber(part))
         end
-
-        return parts, pre_release_parts
+        return parts, tostring(v_str):find("-dev", 1, true) ~= nil
     end
 
-    local parts1, pre1_parts = parseVersion(tostring(v1_str))
-    local parts2, pre2_parts = parseVersion(tostring(v2_str))
+    local parts1, dev1 = parseVersion(v1_str)
+    local parts2, dev2 = parseVersion(v2_str)
 
-    -- 1. Compare main version parts (MAJOR.MINOR.PATCH)
     local max_len = math.max(#parts1, #parts2)
     for i = 1, max_len do
         local p1 = parts1[i] or 0
@@ -143,36 +115,7 @@ local function isVersionNewer(v1_str, v2_str)
         if p1 < p2 then return false end
     end
 
-    -- Main versions are equal, so we proceed to pre-release comparison.
-    local has_pre1 = #pre1_parts > 0
-    local has_pre2 = #pre2_parts > 0
-
-    -- 2. A version with a pre-release has lower precedence than a normal version.
-    if has_pre1 and not has_pre2 then return false end -- e.g., 1.0.0-rc < 1.0.0
-    if not has_pre1 and has_pre2 then return true end  -- e.g., 1.0.0 > 1.0.0-rc
-    if not has_pre1 and not has_pre2 then return false end -- e.g., 1.0.0 == 1.0.0
-
-    -- 3. Both have pre-release tags, compare them identifier by identifier.
-    local pre_max_len = math.max(#pre1_parts, #pre2_parts)
-    for i = 1, pre_max_len do
-        local p1 = pre1_parts[i]
-        local p2 = pre2_parts[i]
-
-        if p1 == nil then return false end -- v1 is shorter, so older (e.g., 1.0-alpha < 1.0-alpha.1)
-        if p2 == nil then return true end  -- v2 is shorter, so older
-
-        local p1_is_num, p2_is_num = type(p1) == "number", type(p2) == "number"
-
-        if p1_is_num and p2_is_num then
-            if p1 > p2 then return true elseif p1 < p2 then return false end
-        elseif p1_is_num then return false -- Numeric identifiers have lower precedence
-        elseif p2_is_num then return true  -- Non-numeric has higher precedence
-        else -- Both are strings
-            if p1 > p2 then return true elseif p1 < p2 then return false end
-        end
-    end
-
-    return false -- Versions are identical
+    return not dev1 and dev2
 end
 
 local function checkForUpdates(assistant)

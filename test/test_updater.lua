@@ -45,25 +45,9 @@ local tests = {
         assert.isTrue(updater.isVersionNewer("1.9.1", "1.9"))
     end),
 
-    test("isVersionNewer: release vs pre-release", function()
-        assert.isTrue(updater.isVersionNewer("1.0.0", "1.0.0-rc.1"))
-        assert.isFalse(updater.isVersionNewer("1.0.0-rc.1", "1.0.0"))
-    end),
-
-    test("isVersionNewer: pre-release comparison (numeric)", function()
-        assert.isTrue(updater.isVersionNewer("1.0.0-rc.2", "1.0.0-rc.1"))
-        assert.isFalse(updater.isVersionNewer("1.0.0-rc.1", "1.0.0-rc.2"))
-    end),
-
-    test("isVersionNewer: pre-release comparison (numeric vs non-numeric)", function()
-        -- Numeric identifiers have lower precedence than non-numeric (SemVer spec)
-        assert.isFalse(updater.isVersionNewer("1.0.0-1", "1.0.0-alpha"))
-        assert.isTrue(updater.isVersionNewer("1.0.0-alpha", "1.0.0-1"))
-    end),
-
-    test("isVersionNewer: pre-release with different lengths", function()
-        assert.isTrue(updater.isVersionNewer("1.0.0-alpha.1", "1.0.0-alpha"))
-        assert.isFalse(updater.isVersionNewer("1.0.0-alpha", "1.0.0-alpha.1"))
+    test("isVersionNewer: stable release beats matching dev version", function()
+        assert.isTrue(updater.isVersionNewer("1.0.0", "1.0.0-dev"))
+        assert.isFalse(updater.isVersionNewer("1.0.0-dev", "1.0.0"))
     end),
 
     test("isVersionNewer: equal versions return false", function()

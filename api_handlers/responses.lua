@@ -58,11 +58,6 @@ ResponsesHandler.SupportedOptions = {
     ["store"]                = true,
 }
 
-function ResponsesHandler:SyncOptions(querier)
-    BaseHandler.SyncOptions(self, querier)
-    self.responses_url = self.base_url .. "/responses"
-end
-
 --- Connection test: minimal Responses API request with the static echo
 --- instruction (plain string input, no tools/streaming).
 function ResponsesHandler:Test()
@@ -246,38 +241,6 @@ end
 --- Returns the concatenated text from all message-type output items.
 --- @param output_items table  response.output array
 --- @return string|nil text, table|nil tool_call_items
-local function parseOutputItems(output_items)
-    local text_parts = {}
-    local tool_calls = {}
-
-    for _, item in ipairs(output_items) do
-        local item_type = item.type
-
-        if item_type == "message" then
-            -- Extract text from content blocks
-            local content = item.content
-            if type(content) == "table" then
-                for _, block in ipairs(content) do
-                    if block.type == "output_text" and block.text then
-                        table.insert(text_parts, block.text)
-                    end
-                end
-            elseif type(content) == "string" then
-                table.insert(text_parts, content)
-            end
-        elseif item_type == "function_call" then
-            table.insert(tool_calls, {
-                tool_call_id = item.call_id,
-                name         = item.name,
-                arguments    = item.arguments or "{}",
-            })
-        end
-    end
-
-    local text = #text_parts > 0 and table.concat(text_parts, "\n\n") or nil
-    return text, #tool_calls > 0 and tool_calls or nil
-end
-
 -- ---------------------------------------------------------------------------
 -- Stream mode: custom backgroundRequest with SSE transformation
 -- ---------------------------------------------------------------------------
@@ -571,6 +534,7 @@ function ResponsesHandler:query(message_history, query_option)
     end
 
     local body = self:buildRequestBody(message_history, query_option, tools)
+    local responses_url = self.base_url .. "/responses"
 
     -- -----------------------------------------------------------------------
     -- STREAM path: return background function
@@ -578,14 +542,14 @@ function ResponsesHandler:query(message_history, query_option)
     if query_option.use_stream_mode then
         local requestBody = json.encode(body)
         headers["Accept"] = "text/event-stream"
-        return self:backgroundRequest(self.responses_url, headers, requestBody)
+        return self:backgroundRequest(responses_url, headers, requestBody)
     end
 
     -- -----------------------------------------------------------------------
     -- NON-STREAM path
     -- -----------------------------------------------------------------------
     local requestBody = json.encode(body)
-    local status, code, response = self:makeRequest(self.responses_url, headers, requestBody)
+    local status, code, response = self:makeRequest(responses_url, headers, requestBody)
 
     if not status then
         if code == BaseHandler.CODE_CANCELLED then
@@ -603,7 +567,7 @@ function ResponsesHandler:query(message_history, query_option)
             end
         end
         logger.warn(self.name, "HTTP request failed:", code, "response:", tostring(response):sub(1, 200))
-        return nil, "Error: " .. tostring(self.model) .. "\n" .. self.responses_url .. "\n- " .. tostring(code or "unknown") .. " - " .. tostring(response)
+        return nil, "Error: " .. tostring(self.model) .. "\n" .. responses_url .. "\n- " .. tostring(code or "unknown") .. " - " .. tostring(response)
     end
 
     local ok, responseData = pcall(json.decode, response)
@@ -619,49 +583,22 @@ function ResponsesHandler:query(message_history, query_option)
         return nil, api_err
     end
 
-    -- Check for missing output (graceful fallback for unexpected response shape)
-    if type(responseData.output) ~= "table" then
-        logger.warn(self.name, "missing 'output' array in response (HTTP", code, "):", tostring(response):sub(1, 200))
-        return nil, "Unexpected API response: missing output"
+    local tool_calls, raw_assistant, text_content, parse_err =
+        ToolExecutor.parseToolCallsResponse(responseData, "responses")
+    if parse_err then
+        return nil, parse_err
     end
-
-    -- Extract text and tool calls from output array
-    local text_content, tool_call_items = parseOutputItems(responseData.output)
-
-    -- If no tool calls, return plain text
-    if not tool_call_items then
-        if text_content then
-            return text_content, nil
-        end
+    if not tool_calls then
+        if text_content then return text_content, nil end
         logger.warn(self.name, "no content in output (HTTP", code, "):", tostring(response):sub(1, 200))
         return nil, "No content in API response"
     end
-
-    -- Build raw_assistant in OpenAI format (for Querier tool-call loop compatibility)
-    -- and return a tool_call descriptor
-    local raw_tool_calls = {}
-    for _, tc in ipairs(tool_call_items) do
-        table.insert(raw_tool_calls, {
-            id        = tc.tool_call_id,
-            type      = "function",
-            ["function"] = {
-                name      = tc.name,
-                arguments = tc.arguments,
-            },
-        })
-    end
-
-    local raw_assistant = {
-        role       = "assistant",
-        content    = text_content,
-        tool_calls = raw_tool_calls,
-    }
 
     return {
         __is_tool_call = true,
         raw_assistant  = raw_assistant,
         format         = "openai", -- use OpenAI format for message building
-        tool_calls     = tool_call_items,
+        tool_calls     = tool_calls,
     }, nil
 end
 

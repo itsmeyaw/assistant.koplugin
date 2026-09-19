@@ -405,10 +405,6 @@ function ModelPickerDialog:onReset()
     Notification:notify(T(_("Model reset: %1"), config_model), Notification.SOURCE_ALWAYS_SHOW)
 end
 
-function ModelPickerDialog:onCloseWidget()
-    InputDialog.onCloseWidget(self)
-end
-
 --- Show the model picker dialog with optional search filter and page
 --- @param selected_model string|nil staged choice to keep highlighted across
 ---        paging/search reopens (nil on a fresh entry)
@@ -502,24 +498,6 @@ showManualInput = function(assistant, close_callback, on_select, reopen_callback
     UIManager:show(dialog)
 end
 
---- Main entry point: fetch models via querier's handler and show picker
-local function showModelPicker(assistant, close_callback, on_select)
-    local models, err = assistant.querier.handler:FetchModels()
-    if err then
-        UIManager:show(InfoMessage:new{ icon = "notice-warning", text = err, })
-        return
-    end
-
-    if not models or #models == 0 then
-        UIManager:show(InfoMessage:new{
-            text = _("No models available."),
-        })
-        return
-    end
-   
-    showPickerDialog(assistant, models, close_callback, "", 1, on_select)
-end
-
 --- Build a temporary handler instance from provider fields and fetch the
 --- model list through the handler's own FetchModels. Each handler knows its
 --- endpoint, auth headers, and post-processing (e.g. Gemini filters by
@@ -545,7 +523,6 @@ local function fetchModels(handler_name, base_url, api_key)
 end
 
 return {
-    showModelPicker = showModelPicker,
     showPickerDialog = showPickerDialog,
     fetchModels = fetchModels,
 }

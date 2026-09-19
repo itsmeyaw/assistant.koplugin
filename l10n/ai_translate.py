@@ -25,7 +25,6 @@ import random
 import re
 import secrets
 import shutil
-import signal
 import sys
 import tempfile
 import time
@@ -642,39 +641,6 @@ def _build_messages(
     ]
 
 
-def _extract_balanced_json(text: str) -> str | None:
-    """Extract the outermost balanced JSON object from text.
-
-    Tracks braces and string-in/out state so nested objects and escaped
-    characters inside strings are handled correctly, unlike a greedy regex.
-    """
-    start = text.find("{")
-    if start == -1:
-        return None
-    depth = 0
-    in_string = False
-    escape = False
-    for i, ch in enumerate(text[start:], start):
-        if escape:
-            escape = False
-            continue
-        if ch == "\\":
-            escape = True
-            continue
-        if ch == '"':
-            in_string = not in_string
-            continue
-        if in_string:
-            continue
-        if ch == "{":
-            depth += 1
-        elif ch == "}":
-            depth -= 1
-            if depth == 0:
-                return text[start : i + 1]
-    return None
-
-
 def _extract_json(content: str) -> dict[str, Any]:
     """Parse the model's JSON content, tolerating stray markdown fences."""
     text = content.strip()
@@ -685,20 +651,20 @@ def _extract_json(content: str) -> dict[str, Any]:
     try:
         return json.loads(text)
     except ValueError:
-        json_text = _extract_balanced_json(text)
-        if not json_text:
+        start = text.find("{")
+        if start == -1:
             log.error(
-                "No balanced JSON object found in LLM content "
+                "No JSON object found in LLM content "
                 "(first 500 chars):\n%s",
                 text[:500],
             )
             raise
         try:
-            return json.loads(json_text)
+            return json.JSONDecoder().raw_decode(text[start:])[0]
         except ValueError:
             log.error(
-                "Failed to parse extracted JSON (first 500 chars):\n%s",
-                json_text[:500],
+                "Failed to parse JSON object (first 500 chars):\n%s",
+                text[start:start + 500],
             )
             raise
 
@@ -905,6 +871,20 @@ def _set_header_metadata(po: polib.POFile, lang_code: str, lang_fullname: str) -
     po.metadata["PO-Revision-Date"] = time.strftime("%Y-%m-%d %H:%M+0000", time.gmtime())
 
 
+def _atomic_save(po: polib.POFile, path: str) -> None:
+    tmp_fd, tmp_path = tempfile.mkstemp(
+        prefix=".ai_translate.", suffix=".tmp", dir=os.path.dirname(path) or "."
+    )
+    os.close(tmp_fd)
+    try:
+        po.save(tmp_path)
+        os.replace(tmp_path, path)
+    except Exception:
+        if os.path.isfile(tmp_path):
+            os.unlink(tmp_path)
+        raise
+
+
 def translate_file(
     cfg: Config, lang_code: str, input_path: str, output_path: str
 ) -> int:
@@ -950,19 +930,7 @@ def translate_file(
         def save_partial() -> None:
             if needs_header_fix:
                 _set_header_metadata(po, lang_code, lang_fullname)
-            # Atomic write: save to a temp file in the same directory, then rename.
-            tmp_fd, tmp_path = tempfile.mkstemp(
-                prefix=".ai_translate.", suffix=".tmp",
-                dir=os.path.dirname(partial_path) or ".",
-            )
-            os.close(tmp_fd)
-            try:
-                po.save(tmp_path)
-                os.replace(tmp_path, partial_path)
-            except Exception:
-                if os.path.isfile(tmp_path):
-                    os.unlink(tmp_path)
-                raise
+            _atomic_save(po, partial_path)
 
         failed_chunks = 0
         for i, chunk_entries in enumerate(chunks, 1):
@@ -995,18 +963,7 @@ def translate_file(
     if needs_header_fix:
         _set_header_metadata(po, lang_code, lang_fullname)
 
-    # Atomic rename partial -> final.
-    tmp_fd, tmp_path = tempfile.mkstemp(
-        prefix=".ai_translate.", suffix=".tmp", dir=os.path.dirname(output_path) or "."
-    )
-    os.close(tmp_fd)
-    try:
-        po.save(tmp_path)
-        os.replace(tmp_path, output_path)
-    except Exception:
-        if os.path.isfile(tmp_path):
-            os.unlink(tmp_path)
-        raise
+    _atomic_save(po, output_path)
 
     if os.path.isfile(partial_path):
         os.unlink(partial_path)
@@ -1044,9 +1001,6 @@ def _apply_log_level(level_name: str) -> None:
     if level is None:
         return
     logging.getLogger().setLevel(level)
-    log.setLevel(level)
-    log_http.setLevel(level)
-    log_translate.setLevel(level)
 
 
 def main(argv: list[str] | None = None) -> int:
