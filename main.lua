@@ -1792,10 +1792,6 @@ end
 
 function Assistant:showAboutDialog()
   local md_renderer = "Pure MD"
-  local ok, parser = pcall(require, "assistant_mdparser")
-  if ok and parser and parser._is_hoedown then
-    md_renderer = "libhoedown"
-  end
 
   local Version = require("version")
 

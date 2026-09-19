@@ -115,7 +115,6 @@ local tests = {
         assert.isFalse(updater.is_excluded("main.lua"))
         assert.isFalse(updater.is_excluded("assistant_utils.lua"))
         assert.isFalse(updater.is_excluded("api_handlers/openai.lua"))
-        assert.isFalse(updater.is_excluded("lib/libhoedown.so.3"))
     end),
 
     test("is_excluded: configuration.lua NOT excluded", function()
