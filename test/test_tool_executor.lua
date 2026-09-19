@@ -57,6 +57,23 @@ local tests = {
         assert.equal("assistant_search_book", raw_assistant.tool_calls[1]["function"].name)
         assert.equal(nil, direct)
     end },
+    { name = "reads direct Responses text", fn = function()
+        local calls, raw_assistant, direct = ToolExecutor.parseToolCallsResponse({
+            output = {
+                { type = "message", content = { { type = "output_text", text = "First." }, { type = "output_text", text = "Second." } } },
+            },
+        }, "responses")
+        assert.equal(nil, calls)
+        assert.equal(nil, raw_assistant)
+        assert.equal("First.\n\nSecond.", direct)
+    end },
+    { name = "rejects Responses output without an array", fn = function()
+        local calls, raw_assistant, direct, err = ToolExecutor.parseToolCallsResponse({}, "responses")
+        assert.equal(nil, calls)
+        assert.equal(nil, raw_assistant)
+        assert.equal(nil, direct)
+        assert.matches(err, "missing output array")
+    end },
 }
 
 return helper.runTests("tool_executor", tests)

@@ -825,7 +825,10 @@ function M.bold_format(text)
         return text
     end
 
-    return PTF_HEADER .. text:gsub("<b>", PTF_BOLD_START):gsub("</b>", PTF_BOLD_END)
+    local formatted, starts = text:gsub("<b>", PTF_BOLD_START)
+    local ends
+    formatted, ends = formatted:gsub("</b>", PTF_BOLD_END)
+    return PTF_HEADER .. formatted .. (starts > ends and PTF_BOLD_END or "")
 end
 
 --- GET HTTP HEADER VALUE
@@ -852,6 +855,7 @@ BaseHandler.CODE_NETWORK_ERROR      = "NETWORK_ERROR"
 BaseHandler.CODE_TIMEOUT            = "REQUEST_TIMEOUT"
 BaseHandler.CODE_UNSUPPORTED_PROTO  = "UNSUPPORTED_PROTOCOL"
 BaseHandler.CODE_INCOMPLETE         = "INCOMPLETE_CONTENT"
+BaseHandler.CODE_UNSUPPORTED_ENCODING = "UNSUPPORTED_ENCODING"
 M.HANDLERCODE = BaseHandler
 
 -- httpRequest, GET/POST only
@@ -906,6 +910,12 @@ function M.httpRequest(url, timeout, maxtime, post_body, post_content_type, head
     if not code then
         logger.warn("HTTP status not okay:", status or code or "network unreachable")
         return false, code, content or "Remote server error or unavailable"
+    end
+
+    local encoding = http_get_header(resp_headers, "content-encoding")
+    if encoding and encoding:lower() ~= "identity" then
+        return false, BaseHandler.CODE_UNSUPPORTED_ENCODING,
+            "Server ignored requested identity content encoding"
     end
 
     local http_len = http_get_header(resp_headers, "content-length")
