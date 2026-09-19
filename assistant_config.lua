@@ -131,11 +131,6 @@ function Config:getProviderSettings()
     return koutil.tableGetValue(self._data, "provider_settings") or {}
 end
 
---- Returns the entire features table from CONFIGURATION.
-function Config:getFeatures()
-    return koutil.tableGetValue(self._data, "features") or {}
-end
-
 --- True when provider has model/base_url/api_key. Model may be
 --- provider.model or selected_model_<id> (for file-providers that
 --- omit model in configuration.lua and let the user pick via UI).
@@ -248,20 +243,6 @@ function Config:deleteProvider(id)
         self._assistant.updated = true
     end
     return true
-end
-
---- Thin wrapper: search tools share the provider_settings table under fixed
---- keys (serpapi, tavilyapi, …). Delegates to setProvider.
---- @param tool_key string Fixed search-tool key (e.g. "serpapi"), not an API key.
-function Config:setSearchTool(tool_key, record)
-    return self:setProvider(tool_key, record)
-end
-
---- Thin wrapper: search tools share the provider_settings table under fixed
---- keys (serpapi, tavilyapi, …). Delegates to deleteProvider.
---- @param tool_key string Fixed search-tool key (e.g. "serpapi"), not an API key.
-function Config:deleteSearchTool(tool_key)
-    return self:deleteProvider(tool_key)
 end
 
 --- Build the effective CONFIGURATION table from the raw dofile() result of

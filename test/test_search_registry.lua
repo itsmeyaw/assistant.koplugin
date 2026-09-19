@@ -77,8 +77,6 @@ local function mockAssistant(search_data)
         if v == nil or v == require("rapidjson").null then return nil end
         return v
     end
-    config.setSearchTool = config.setProvider
-    config.deleteSearchTool = config.deleteProvider
     config._data = config_data
     assistant.config = config
     return assistant

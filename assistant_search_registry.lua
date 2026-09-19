@@ -260,7 +260,7 @@ function SearchRegistry.installSearchTool(assistant, tool_key, api_key, base_url
         base_url = record.base_url,
         source = "ui",
     }
-    assistant.config:setSearchTool(tool_key, rec)
+    assistant.config:setProvider(tool_key, rec)
 
     return true
 end
@@ -281,7 +281,7 @@ function SearchRegistry.deleteSearchTool(assistant, tool_key)
     end
 
     SearchRegistry.save(assistant.settings, assistant._ui_search_data)
-    assistant.config:deleteSearchTool(tool_key)
+    assistant.config:deleteProvider(tool_key)
 
     return true
 end

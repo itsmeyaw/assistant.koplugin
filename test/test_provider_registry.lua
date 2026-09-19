@@ -95,8 +95,6 @@ local function mockAssistantForInstall()
         end
         return true
     end
-    config.setSearchTool = config.setProvider
-    config.deleteSearchTool = config.deleteProvider
     -- Expose the raw data table for direct assertions in tests.
     config._data = config_data
     assistant.config = config
