@@ -642,23 +642,12 @@ local function table_merge(t1, t2)
 end
 
 
-local function table_sort(t, key)
-    table.sort(t, function(a, b)
-        if a[key] == nil or b[key] == nil then
-            return false
-        end
-        return a[key] < b[key]
-    end)
-end
-
-
 local WEBSEARCH_ICON = "🌐"
 
 local M = {
     builtin_prompts = builtin_prompts,       -- Built-in prompts for the AI
     assistant_prompts = assistant_prompts, -- Preconfigured prompts for the AI
     merged_prompts = nil,                  -- Merged prompts from builtin and configuration
-    sorted_prompts = nil,                  -- Sorted merged prompts
     WEBSEARCH_ICON = WEBSEARCH_ICON,
 }
 
@@ -787,7 +776,6 @@ end
 
 M.invalidateCache = function()
     M.merged_prompts = nil
-    M.sorted_prompts = nil
 end
 
 -- Func description:
@@ -817,10 +805,6 @@ end
 --                     the 🌐 icon is prepended to the display text.
 -- return list item: {idx, order, text}
 M.getSortedPrompts = function(filter_func, web_search_enabled)
-    if M.sorted_prompts then
-        return M.sorted_prompts
-    end
-
     -- Sort the merged prompts by order
     local sorted_prompts = {}
     for prompt_index, prompt in pairs(M.merged_prompts or builtin_prompts) do
@@ -840,7 +824,9 @@ M.getSortedPrompts = function(filter_func, web_search_enabled)
                 })
         end
     end
-    table_sort(sorted_prompts, "order")
+    table.sort(sorted_prompts, function(a, b)
+        return a.order < b.order
+    end)
 
     return sorted_prompts
 end
