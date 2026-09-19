@@ -14,6 +14,14 @@ local Prompts = require("assistant_prompts")
 local ASUtils = require("assistant_utils")
 local extractBookTextForAnalysis = ASUtils.extractBookTextForAnalysis
 local extractHighlightsNotesAndNotebook = ASUtils.extractHighlightsNotesAndNotebook
+local feature_titles = {
+    -- @translators Feature name, short for "recapitulation": a brief spoiler-free summary of what the reader has already read, to refresh memory. Keep consistent with "AI Recaps" / "AI Recap" elsewhere.
+    recap = _("Recap"),
+    xray = _("X-Ray"),
+    book_info = _("Book Information"),
+    annotations = _("Highlight & Note Analysis"),
+    summary_using_annotations = _("Summary Using Highlights & Notes"),
+}
 
 local function showFeatureDialog(assistant, feature_type, title, author, progress_percent, message_history, notebook_path)
     local Querier = assistant.querier
@@ -63,40 +71,8 @@ local function showFeatureDialog(assistant, feature_type, title, author, progres
             highlights_notes = extractHighlightsNotesAndNotebook(assistant, false)
         end
     else
-        -- Original feature type handling
-        -- Feature type configurations for easy extension
-        local feature_configurations = {
-            recap = {
-                -- @translators Feature name, short for "recapitulation": a brief spoiler-free summary of what the reader has already read, to refresh memory. Keep consistent with "AI Recaps" / "AI Recap" elsewhere.
-                title = _("Recap"),
-                config_key = "recap_config",
-                prompts_key = "recap"
-            },
-            xray = {
-                title = _("X-Ray"),
-                config_key = "xray_config",
-                prompts_key = "xray"
-            },
-            book_info = {
-                title = _("Book Information"),
-                config_key = "book_info_config",
-                prompts_key = "book_info"
-            },
-            annotations = {
-                title = _("Highlight & Note Analysis"),
-                config_key = "annotations_config",
-                prompts_key = "annotations"
-            },
-            summary_using_annotations = {
-                title = _("Summary Using Highlights & Notes"),
-                config_key = "summary_using_annotations_config",
-                prompts_key = "summary_using_annotations"
-            }
-        }
-        
-        -- Get feature configuration
-        local feature_config = feature_configurations[feature_type]
-        if not feature_config then
+        feature_title = feature_titles[feature_type]
+        if not feature_title then
             UIManager:show(InfoMessage:new{
                 icon = "notice-warning",
                 text = ASUtils.bold_format(
@@ -106,9 +82,8 @@ local function showFeatureDialog(assistant, feature_type, title, author, progres
             return
         end
         
-        feature_title = feature_config.title
-        local config_key = feature_config.config_key
-        local prompts_key = feature_config.prompts_key
+        local config_key = feature_type .. "_config"
+        local prompts_key = feature_type
         
         -- Get feature config with fallbacks
         local file_config = assistant.config:getFeature(config_key) or {}
@@ -135,15 +110,8 @@ local function showFeatureDialog(assistant, feature_type, title, author, progres
           book_text = extractBookTextForAnalysis(assistant)
           highlights_notes = extractHighlightsNotesAndNotebook(assistant, false)
         end
-        -- build effective prompt config for show_suggestions (file override > builtin)
-        local builtin_cfg = assistant_prompts[prompts_key] or {}
-        feature_prompt_config = {}
-        for k, v in pairs(builtin_cfg) do
-            feature_prompt_config[k] = v
-        end
-        if file_config.show_suggestions ~= nil then
-            feature_prompt_config.show_suggestions = file_config.show_suggestions
-        end
+        feature_prompt_config = file_config.show_suggestions ~= nil and file_config
+            or assistant_prompts[prompts_key]
     end
 
     local ws_enabled = Prompts.isWebSearchEnabled(assistant.settings)
@@ -265,7 +233,6 @@ local function showFeatureDialog(assistant, feature_type, title, author, progres
           end
         end
 
-        viewer:trimMessageHistory()
         ASUtils.runWhenOnlineFast(function()
           Trapper:wrap(function()
             local answer, err = Querier:query(message_history, viewer_title ~= "" and viewer_title or feature_title)

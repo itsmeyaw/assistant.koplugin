@@ -158,18 +158,10 @@ local ChatGPTViewer = InputContainer:extend {
   text = nil,
   width = nil,
   height = nil,
-  buttons_table = nil,
-
-  title_face = nil,               -- use default from TitleBar
-  title_multilines = nil,         -- see TitleBar for details
-  title_shrink_font_to_fit = nil, -- see TitleBar for details
   text_padding = Size.padding.large,
   text_margin = Size.margin.small,
   button_padding = Size.padding.default,
-  -- Bottom row with Close, Find buttons. Also added when no caller's buttons defined.
-  add_default_buttons = nil,
   default_hold_callback = nil,   -- on each default button
-  find_centered_lines_count = 5, -- line with find results to be not far from the center
 
   onAskQuestion = nil, -- callback when the Ask Another Question button is pressed
   input_dialog = nil,
@@ -189,10 +181,6 @@ function ChatGPTViewer:init()
   }
   self.width = self.width or Screen:getWidth() - Screen:scaleBySize(30)
   self.height = self.height or Screen:getHeight() - Screen:scaleBySize(30)
-
-  self._find_next = false
-  self._find_next_button = false
-  self._old_virtual_line_num = 1
 
   if Device:hasKeys() then
     self.key_events.Close = { { Device.input.group.Back } }
@@ -283,9 +271,6 @@ function ChatGPTViewer:init()
     with_bottom_line = true,
     title = "Assistant: " .. (self.title or ""),
     subtitle = notebook_subtitle,
-    title_face = self.title_face,
-    title_multilines = self.title_multilines,
-    title_shrink_font_to_fit = self.title_shrink_font_to_fit,
     close_callback = function() self:onClose() end,
     close_hold_callback = function() self:HoldClose() end,
     left_icon = "appbar.settings",
@@ -371,10 +356,7 @@ function ChatGPTViewer:init()
     hold_callback = self.default_hold_callback,
   })
   
-  local buttons = self.buttons_table or {}
-  if self.add_default_buttons or not self.buttons_table then
-    table.insert(buttons, default_buttons)
-  end
+  local buttons = { default_buttons }
   
   -- Add a copy button to the bottom button row
   local copy_button = {
@@ -972,14 +954,6 @@ function ChatGPTViewer:handleTextSelection(text, hold_duration, start_idx, end_i
           or _("Selection copied to clipboard."),
     })
   end
-end
-
-function ChatGPTViewer:trimMessageHistory()
-  if not self.message_history then return end
-
-  --- TODO: context should be compressed, not trimmed
-  --- 
-  return
 end
 
 function ChatGPTViewer:html_link_tapped_callback(link)
