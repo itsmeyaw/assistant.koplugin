@@ -80,6 +80,9 @@ local function mockAssistantForInstall()
         assistant.updated = true
         return true
     end
+    function config:clearLoadError()
+        config.load_error = nil
+    end
     function config:deleteProvider(id)
         if not id or id == "" then return nil, "invalid id" end
         if config_data and config_data.provider_settings then
@@ -390,6 +393,15 @@ local tests = {
         -- getActiveProviderId reads this key on the next reload (e.g. opening a
         -- book); without it the previous provider/model would come back.
         assert.equal(assistant.settings:readSetting("provider"), id)
+    end),
+
+    test("installProvider clears an optional configuration file error", function()
+        local assistant = mockAssistantForInstall()
+        assistant.config.load_error = "configuration.lua: No such file or directory"
+        local id, err = Registry.installProvider(assistant, "openai",
+            "https://api.test.com/v1", "AMD", "key", "gpt-4o")
+        assert.notNil(id, err)
+        assert.equal(assistant.config.load_error, nil)
     end),
 
     test("installProvider does not share preset additional_parameters tables", function()

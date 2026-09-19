@@ -903,6 +903,13 @@ function Assistant:init()
   self.config = Config:new{ assistant = self, data = rawConfig or {}, loadError = loadError }
   self.config:buildEffectiveConfig()
 
+  -- Keep the runtime ready for a first provider added through Settings.
+  self.querier = require("assistant_querier"):new({
+    assistant = self,
+    settings = self.settings,
+  })
+  self.assistant_dialog = AssistantDialog:new(self)
+
   -- Register actions with dispatcher for gesture assignment
   self:onDispatcherRegisterActions()
 
@@ -963,12 +970,6 @@ function Assistant:init()
     return
   end
 
-  -- Load the model provider from settings or default configuration
-  self.querier = require("assistant_querier"):new({
-    assistant = self,
-    settings = self.settings,
-  })
-
   local ok, err = self.querier:load_model(model_provider)
   if not ok then
     self.config:setLoadError(err)
@@ -991,9 +992,6 @@ function Assistant:init()
     self:_groupDictButtonsInDefaultLayout(button_ids)
     self:_restoreDictButtonsInUserLayout(button_ids)
   end
-
-
-  self.assistant_dialog = AssistantDialog:new(self)
 
   if self.ui.document then
     -- Reader specific

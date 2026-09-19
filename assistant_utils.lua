@@ -1209,7 +1209,7 @@ function M.fetchJSON(url, header, string_or_widget, timeout, maxtime, post_body)
   end
 
   if not success then
-    return nil, BaseHandler.CODE_NETWORK_ERROR
+    return nil, (type(body) == "string" and body ~= "" and body) or code or BaseHandler.CODE_NETWORK_ERROR
   end
 
   if code ~= 200 then

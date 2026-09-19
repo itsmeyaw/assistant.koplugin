@@ -164,6 +164,7 @@ end
 
 -- Override ASUtils.fetchJSON with our mock
 local originalFetchJSON = ASUtils.fetchJSON
+M.originalFetchJSON = originalFetchJSON
 function ASUtils.fetchJSON(url, header, trap_widget, timeout, maxtime, post_body)
     M.fetchJSON_call_index = (M.fetchJSON_call_index or 0) + 1
     local resp = M.fetchJSON_responses[M.fetchJSON_call_index]

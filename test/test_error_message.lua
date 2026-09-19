@@ -10,6 +10,24 @@ local function test(name, fn)
 end
 
 local tests = {
+    test("fetchJSON preserves the transport error detail", function()
+        local original_http_request = ASUtils.httpRequest
+        local Trapper = require("ui/trapper")
+        local original_subprocess = Trapper.dismissableRunInSubprocess
+        ASUtils.httpRequest = function()
+            return false, "REQUEST_TIMEOUT", "Request interrupted/timed out"
+        end
+        Trapper.dismissableRunInSubprocess = function(_, fn)
+            return true, fn()
+        end
+        local parsed, err = helper.originalFetchJSON("https://example.com")
+        ASUtils.httpRequest = original_http_request
+        Trapper.dismissableRunInSubprocess = original_subprocess
+
+        assert.equal(parsed, nil)
+        assert.equal(err, "Request interrupted/timed out")
+    end),
+
     test("extractErrorMessage: error.message wins", function()
         local d = ASUtils.extractErrorMessage('{"error":{"message":"boom"},"message":"ignored"}')
         assert.equal(d, "boom")

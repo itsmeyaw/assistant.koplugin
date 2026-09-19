@@ -163,6 +163,7 @@ function AssistantDialog:_createResultText(highlightedText, message_history, pre
   local function formatSingleMessage(message, title, msg_idx)
     if not message then return "" end
     if message.role == "user" then
+      if type(message.content) ~= "string" then return "" end
       local user_message = strbuf.new()
       user_message:put(T(_("### %1 Question\n"), "☺"))
 
